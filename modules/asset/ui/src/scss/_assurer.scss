@@ -2,6 +2,8 @@
 // come from the design tokens in _tokens.scss (m1-020).
 
 body {
+  // Undoes the development-only guard in views/layout.jsx (m1-024).
+  visibility: visible;
   color: var(--assurer-color-text);
 }
 
@@ -182,7 +184,12 @@ body {
   margin: 0;
   opacity: 0;
   visibility: hidden;
-  transition: opacity 0.5s ease, visibility 0.5s;
+
+  // Fade only once the player has started, so slides never fade at page
+  // load (m1-024).
+  .assurer-slideshow.is-ready & {
+    transition: opacity 0.5s ease, visibility 0.5s;
+  }
 
   &.is-active {
     opacity: 1;
@@ -244,7 +251,7 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .assurer-slideshow__slide { transition: none; }
+  .assurer-slideshow.is-ready .assurer-slideshow__slide { transition: none; }
 }
 
 // Product cards

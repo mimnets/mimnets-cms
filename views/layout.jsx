@@ -146,6 +146,22 @@ function FaviconLinks() {
   );
 }
 
+// Development only (m1-024). The Vite dev server injects the site CSS by
+// script after the first paint, so every refresh showed the page unstyled.
+// Hide the body until the site CSS arrives (_assurer.scss makes it visible
+// again); the animation reveals it after 3 s if the CSS never loads.
+// Production links the CSS in <head>, which already blocks rendering.
+function DevStyleGuard({ apos }) {
+  if (!apos.asset.hasDevServer()) {
+    return null;
+  }
+  return (
+    <style>
+      {':where(body) { visibility: hidden; animation: assurer-dev-reveal 0s 3s forwards; } @keyframes assurer-dev-reveal { to { visibility: visible; } }'}
+    </style>
+  );
+}
+
 function Header({
   user, home, page, global
 }) {
@@ -245,7 +261,7 @@ export default function (data, { Extend, apos }) {
     <Extend
       templateName={data.outerLayout}
       title={title}
-      extraHead={<FaviconLinks />}
+      extraHead={<><FaviconLinks /><DevStyleGuard apos={apos} /></>}
       main={
         <div className="assurer-wrapper">
           <a className="assurer-skip-link" href="#main-content">Skip to content</a>
