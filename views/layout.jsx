@@ -151,13 +151,17 @@ function FaviconLinks() {
 // Hide the body until the site CSS arrives (_assurer.scss makes it visible
 // again); the animation reveals it after 3 s if the CSS never loads.
 // Production links the CSS in <head>, which already blocks rendering.
+// The body margin and the skip link are set as the site CSS sets them
+// (m1-025): otherwise they push the demo notice down while unstyled, and
+// Chrome's scroll restoration on reload sometimes scrolls to that position,
+// which shows for one frame once the CSS arrives.
 function DevStyleGuard({ apos }) {
   if (!apos.asset.hasDevServer()) {
     return null;
   }
   return (
     <style>
-      {':where(body) { visibility: hidden; animation: assurer-dev-reveal 0s 3s forwards; } @keyframes assurer-dev-reveal { to { visibility: visible; } }'}
+      {':where(body) { margin: 0; visibility: hidden; animation: assurer-dev-reveal 0s 3s forwards; } @keyframes assurer-dev-reveal { to { visibility: visible; } } :where(.assurer-skip-link) { position: absolute; }'}
     </style>
   );
 }

@@ -304,9 +304,13 @@ $nav-desktop: $bp-desktop;
   }
 }
 
+// Baseline alignment: the links have vertical padding (a larger tap
+// target) and the current page does not, so top alignment put the links
+// lower than the current page (m1-025).
 .assurer-breadcrumbs__list {
   display: flex;
   flex-wrap: wrap;
+  align-items: baseline;
   margin: 0;
   padding: 0;
   list-style: none;
