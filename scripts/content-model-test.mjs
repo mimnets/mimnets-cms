@@ -162,6 +162,19 @@ for (const type of [ 'assurer-product', 'assurer-organization', 'assurer-person'
     password: 'escalation-attempt-password'
   }, { draft: false });
   check('editor cannot create an admin user', [ 401, 403, 404 ].includes(newAdmin.status), String(newAdmin.status));
+  // m1-022 (D-M0-11): Global Styles are admin only, refused server side.
+  const styles = await api(tokens.admin, 'GET', '@apostrophecms/styles');
+  const stylesDoc = styles._id ? styles : styles.results?.[0];
+  check('admin can read the Global Styles document', Boolean(stylesDoc?._id));
+  if (stylesDoc?._id) {
+    const edStyles = await call(tokens.editor, 'PATCH', `@apostrophecms/styles/${stylesDoc._id}`, { lineHeight: 2.5 });
+    check('editor cannot change Global Styles', [ 401, 403, 404 ].includes(edStyles.status), String(edStyles.status));
+    const after = await api(tokens.admin, 'GET', `@apostrophecms/styles/${stylesDoc._id}`);
+    check('Global Styles unchanged after the editor attempt', after.lineHeight === stylesDoc.lineHeight,
+      `${stylesDoc.lineHeight} -> ${after.lineHeight}`);
+    const adStyles = await call(tokens.admin, 'PATCH', `@apostrophecms/styles/${stylesDoc._id}`, { lineHeight: stylesDoc.lineHeight ?? 1.5 });
+    check('admin can still save Global Styles', adStyles.status === 200, String(adStyles.status));
+  }
   const fd = new FormData();
   fd.append('file', new Blob([ await readFile(path.join(imagesDir, 'product-home.png')) ], { type: 'image/png' }), 'anon.png');
   const anonUpload = await call(null, 'POST', '@apostrophecms/attachment/upload', fd, { draft: false });

@@ -1,4 +1,8 @@
 {
+  "adminBarContent": "Content",
+  "adminBarForms": "Forms",
+  "adminBarMedia": "Media",
+  "adminBarSiteAdmin": "Site admin",
   "altTextRequired": "Every image here needs alt text. Add it in the media library, then save again. Missing for: {{ titles }}",
   "anchorId": "Anchor ID",
   "anchorIdHelp": "Optional. Lets links jump to this section, e.g. \"services\" for #services.",

@@ -1,6 +1,13 @@
 // modules/@apostrophecms/styles/index.js
 
 export default {
+  // Global Styles are site-wide: admins only (D-M0-11, m1-022). Core
+  // permission options, enforced server side by apos.permission.can(), so an
+  // editor's API write is refused and the palette icon is hidden.
+  options: {
+    editRole: 'admin',
+    publishRole: 'admin'
+  },
   styles: {
     add: {
       // ============================================
