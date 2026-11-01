@@ -12,8 +12,9 @@ export default {
   options: {
     label: 'Product',
     // Core derives "G,<first letter>", which would clash with Pages,
-    // People, Products, Forms and Organizations.
-    shortcut: 'G,R',
+    // People, Products, Forms and Organizations. "G,R" is core's Redirects
+    // shortcut; Shift follows core's Image Tags ("G,Shift+I") pattern.
+    shortcut: 'G,Shift+P',
     pluralLabel: 'Products',
     sort: displayOrderSort
   },
