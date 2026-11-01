@@ -62,6 +62,9 @@ export default () => {
       el.addEventListener('focusout', start);
 
       show(0);
+      // Turn the fade on after the first frame with the start state (see
+      // _assurer.scss), so nothing fades in at page load.
+      requestAnimationFrame(() => el.classList.add('is-ready'));
       start();
     }
   };
