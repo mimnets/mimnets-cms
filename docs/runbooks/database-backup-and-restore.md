@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft. **Verified 2026-10-19 (`m0-003`):** SQLite `apos-db-dump`, `apos-db-restore` into a fresh file, and `migrate` rebuilding search. **Not executed:** the `tar` media steps and all PostgreSQL steps (pending the acceptance test in ADR-0002 §6). |
+| **Status** | Draft. **Verified 2026-10-19 (`m0-003`):** SQLite `apos-db-dump`, `apos-db-restore` into a fresh file, and `migrate` rebuilding search. **Not executed:** the `tar` media steps and all PostgreSQL steps (pending the acceptance test in ADR-0002 §6). **m1-032 (2026-11-02):** `assurer-security:sanitize-after-restore` added (§B, §F). Verified on throwaway SQLite databases only, not on PostgreSQL. |
 | **Decision** | [ADR-0002](../architecture/decisions/ADR-0002-database-strategy.md) |
 | **Audience** | Operators with access to the target environment's secrets |
 
@@ -32,8 +32,14 @@ Expected: the dump has one header line per collection (12 in M0) followed by one
 ```sh
 npx apos-db-restore "sqlite://./data/restore-test.db" --input=backups/<date>-local.jsonl
 APOS_DB_URI="sqlite://./data/restore-test.db" node app @apostrophecms/migration:migrate   # rebuilds search index
+APOS_DB_URI="sqlite://./data/restore-test.db" node app assurer-security:sanitize-after-restore --execute --database=restore-test
 tar -xzf backups/<date>-uploads.tgz          # only into a matching checkout
 ```
+
+The sanitize step (m1-032) removes the sessions, bearer tokens, login-throttle counters and
+password-reset hashes that the dump carried, so the copied cookies and tokens no longer work on
+the restored copy. Without `--execute` it only reports counts. The database name for
+`--database` is the one the dry run prints. For SQLite it is the file name without `.db`.
 
 **Verify:**
 - `npm run test:smoke` passes against the restored database.
@@ -61,6 +67,8 @@ At each release, and before any migration:
 2. Create a **new** database, from PITR, `pg_restore`, or `apos-db-restore` of the JSONL export.
 3. Restore media from the same point.
 4. Run `node app @apostrophecms/migration:migrate` against the new database.
+   Optional for the same site: `node app assurer-security:sanitize-after-restore --execute
+   --database=<name>` logs everyone out. Use it when sessions or tokens may be compromised.
 5. Run the smoke test and the editor workflow test against an isolated URL.
 6. Switch `APOS_DB_URI`, restart, and monitor.
 7. Write an incident report under `docs/engineering/reports/`.
@@ -68,13 +76,25 @@ At each release, and before any migration:
 ## F. Copying production data into a lower environment
 
 Not allowed without approval. If approved:
-- Restore into the lower environment.
-- Invalidate all sessions and bearer tokens.
-- Rotate `APOS_SESSION_SECRET`.
-- Assess the form submissions (personal data) before restoring them.
-
-A reviewed Apostrophe task for this sanitisation is a Milestone 1 proposal; it does not exist yet.
+- Restore into a new, empty database in the lower environment, with the app stopped.
+- Before the app serves any request, sanitize the copy (m1-032):
+  ```sh
+  node app assurer-security:sanitize-after-restore                                # dry run: counts, database name
+  node app assurer-security:sanitize-after-restore --execute --database=<name>    # apply
+  ```
+  This deletes `sessions` and `aposBearerTokens` documents and the
+  `@apostrophecms/loginAttempt*` entries in `aposCache`, and clears `passwordResetHash` in
+  `aposUsersSafe`. It does not touch content, users, password hashes, form submissions, media or
+  the form rate-limit counters. Those counters hold client IP addresses for up to 15 minutes.
+  `--database` must repeat the configured database name, or the task refuses. Re-running it is
+  safe.
+- Rotate `APOS_SESSION_SECRET`. The lower environment has its own secret in any case (AGENTS.md).
+- Assess the form submissions (personal data) before restoring them. The task does not remove
+  them (owner scope, m1-032; retention is D-FORM-2).
+- Password hashes stay. Treat the copy as holding production credentials, or have the users
+  reset their passwords. That is a separate decision.
 
 ## G. Drill schedule
 
-Quarterly restore drill into an isolated environment. Record the result as a dated report.
+Quarterly restore drill into an isolated environment. Sanitize the restored copy (§F) before
+it serves requests. Record the result as a dated report.
