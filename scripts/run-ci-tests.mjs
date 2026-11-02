@@ -76,7 +76,10 @@ const env = {
   BASE_URL,
   // Absolute page URLs point at this test server (m1-018). Indexing stays
   // off (APOS_ALLOW_INDEXING unset), as on every non-production site.
-  APOS_BASE_URL: BASE_URL
+  APOS_BASE_URL: BASE_URL,
+  // The smoke test expects the demonstration notice (m1-029,
+  // lib/demo-site.js); real-content sites leave this unset.
+  APOS_DEMO_SITE: '1'
 };
 
 // A free local port for the SMTP sink that scripts/form-ops-test.mjs runs.

@@ -131,6 +131,8 @@ anything entered there is not migrated.
 These come up during CA-5 but are code changes with their own task and checks:
 
 - Remove the demo notice and the demonstration footer line on real-content builds (B6).
+  *Done in m1-029:* shown only when `APOS_DEMO_SITE=1`.
 - Per-file redirects for the PDFs (§4), or an extension of the redirect seed task for them.
 - Card grids switch at 640 px; the requirements say 768 px (m1-021 carry-over).
-- A `/favicon.ico` (m1-021 carry-over).
+  *Done in m1-029.*
+- A `/favicon.ico` (m1-021 carry-over). *Done in m1-029.*

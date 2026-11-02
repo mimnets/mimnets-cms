@@ -11,12 +11,20 @@
 // template arrive as this template's data, so `data.main` is the `main` prop
 // rather than anything belonging to the page document.
 import { breadcrumbItems } from '../lib/breadcrumbs.js';
+import { readDemoSite } from '../lib/demo-site.js';
 import { linkHref } from '../lib/link.js';
 import { pageTitle } from '../lib/seo-title.js';
 
-// Milestone 0: every page carries this notice so nobody mistakes the proof
-// of concept for the production site.
+// Demonstration sites only (APOS_DEMO_SITE=1, lib/demo-site.js; m1-029):
+// every page carries this notice so nobody mistakes the proof of concept for
+// the production site. Real-content sites show neither it nor the footer's
+// demonstration line.
+const DEMO_SITE = readDemoSite(process.env);
+
 function DemoNotice() {
+  if (!DEMO_SITE) {
+    return null;
+  }
   return (
     <div className="assurer-demo-notice" role="note">
       Demonstration site — Milestone 0 proof of concept. Content is placeholder only.
@@ -241,11 +249,13 @@ function Footer({ global = {} }) {
           <a href={privacyPage._url}>Privacy notice</a>
         </p>
       )}
-      <p className="assurer-footer__legal">
-        {global.copyrightName
-          ? `© ${new Date().getFullYear()} ${global.copyrightName}`
-          : '© Assurer World — demonstration content. Built with ApostropheCMS Community Edition.'}
-      </p>
+      {(global.copyrightName || DEMO_SITE) && (
+        <p className="assurer-footer__legal">
+          {global.copyrightName
+            ? `© ${new Date().getFullYear()} ${global.copyrightName}`
+            : '© Assurer World — demonstration content. Built with ApostropheCMS Community Edition.'}
+        </p>
+      )}
     </footer>
   );
 }

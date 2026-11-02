@@ -1,6 +1,11 @@
 import 'dotenv/config';
 import apostrophe from 'apostrophe';
 import { defaultBaseUrl } from './modules/assurer-seo/lib/config.js';
+import { readDemoSite } from './lib/demo-site.js';
+
+// Stop at startup on an invalid APOS_DEMO_SITE (m1-029); views/layout.jsx
+// reads the same value.
+readDemoSite(process.env);
 
 apostrophe({
   root: import.meta,

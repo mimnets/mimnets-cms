@@ -14,7 +14,7 @@ function ProductCard({
           <img
             src={apos.attachment.url(attachment, { size: 'one-half' })}
             srcset={apos.image.srcset(attachment)}
-            sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+            sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw"
             alt={attachment._alt || ''}
             loading="lazy"
           />

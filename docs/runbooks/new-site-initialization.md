@@ -18,6 +18,8 @@ hashes, sessions, API tokens, form submissions and version history.
    on. Local: the default `public/uploads`.
 4. **Secrets:** `cp .env.example .env`, generate a new `APOS_SESSION_SECRET`, and set
    `APOS_DB_URI` and the storage variables. Never reuse values from another site.
+   Leave `APOS_DEMO_SITE` unset on a real-content site; set it to `1` only on development
+   and demo sites (m1-029).
 5. **Initialise:** `node app @apostrophecms/migration:migrate`. This creates the home page, the
    global document and the indexes.
 6. **First admin:** `node app @apostrophecms/user:add <username> admin` (interactive password

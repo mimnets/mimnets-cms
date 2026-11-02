@@ -287,7 +287,7 @@ body {
   gap: 24px;
 }
 
-@media (min-width: 640px) {
+@media (min-width: 768px) {
   .assurer-products__grid > [data-apos-area],
   .assurer-products__grid > .apos-area {
     grid-template-columns: repeat(2, 1fr);
