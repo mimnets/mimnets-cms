@@ -10,3 +10,5 @@ actually run.
 | [New site initialization](./new-site-initialization.md) | Draft |
 | [Deployment principles](./deployment-principles.md) | Reference only (no deployment approved) |
 | [SEO operations](./seo.md) | §1–§4 verified locally (m1-018); launch checks not yet executed |
+| [Disposable PostgreSQL 16 on OCI (Docker), dev connection, export/import](./postgresql-dev-on-oci-docker.md) | Draft — not yet executed (m1-033); fallback, not chosen |
+| [Disposable PostgreSQL 16 on Neon (free plan), D-DB-5 test, export/import](./postgresql-dev-on-neon.md) | Draft; §2–§4 verified (m1-033); export/import not executed |

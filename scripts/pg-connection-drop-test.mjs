@@ -3,8 +3,9 @@
 // (docs/milestones/m1-d-db-5-postgresql-connection-loss-proposal.md).
 //
 // Written in m1-032 and NOT RUN there: no PostgreSQL was available. Run it
-// only against a disposable, local PostgreSQL that the owner has approved,
-// with the major version chosen for staging (D-DB-2, D-DB-6).
+// only against a disposable PostgreSQL that the owner has approved, with the
+// major version chosen for staging (D-DB-2, D-DB-6). m1-033: a remote
+// disposable server (Neon, owner-approved) needs --allow-remote-host.
 //
 //   node --env-file=.env scripts/pg-connection-drop-test.mjs --database=<name>
 //     [--supervise]              restart the app 2 s after it exits, like a
@@ -14,12 +15,14 @@
 //                                pg_ctl -D <dir> stop -m immediate), the other
 //                                starts it again 30 s later
 //     [--port=3033]
+//     [--allow-remote-host=<host>]  accept this exact non-loopback host
 //
-// APOS_DB_URI must be a postgres:// URI on a loopback host; --database must
-// repeat its database name, because the test terminates every connection to
-// that database. Admin SQL runs through `psql` (PostgreSQL client tools) with
-// PG_ADMIN_URI, or APOS_DB_URI when unset; prefer a ~/.pgpass entry over a
-// password in either URI.
+// APOS_DB_URI must be a postgres:// URI on a loopback host, or on the host
+// named by --allow-remote-host; --database must repeat its database name,
+// because the test terminates every connection of the APOS_DB_URI user to
+// that database. Admin SQL runs through the `pg` client that db-connect
+// already depends on (no psql needed), with PG_ADMIN_URI, or APOS_DB_URI
+// when unset. Keep both URIs in the git-ignored .env.
 //
 // Scenarios:
 //   idle-terminate   app idle, pg_terminate_backend on all its connections
@@ -35,7 +38,6 @@
 // Exit code 1 on any FAIL.
 
 import {
-  execFileSync,
   execSync,
   spawn
 } from 'node:child_process';
@@ -63,13 +65,15 @@ const { values: args } = parseArgs({
     port: {
       type: 'string',
       default: '3033'
-    }
+    },
+    'allow-remote-host': { type: 'string' }
   }
 });
 
 const dbUri = process.env.APOS_DB_URI || '';
 const adminUri = process.env.PG_ADMIN_URI || dbUri;
-const target = checkTarget(dbUri, args.database);
+const target = checkTarget(dbUri, args.database, args['allow-remote-host']);
+const appUser = decodeURIComponent(new URL(dbUri).username);
 const base = `http://127.0.0.1:${args.port}`;
 const results = [];
 
@@ -101,7 +105,7 @@ for (const result of results) {
 }
 process.exit(results.some(result => result.outcome === 'FAIL') ? 1 : 0);
 
-function checkTarget(uri, database) {
+function checkTarget(uri, database, remoteHost) {
   let url;
   try {
     url = new URL(uri);
@@ -111,8 +115,10 @@ function checkTarget(uri, database) {
   if (url.protocol !== 'postgres:' && url.protocol !== 'postgresql:') {
     throw new Error('APOS_DB_URI is not a postgres:// URI.');
   }
-  if (![ '127.0.0.1', 'localhost', '[::1]' ].includes(url.hostname)) {
-    throw new Error('Refusing: the database host is not loopback. Use a disposable local PostgreSQL.');
+  if (![ '127.0.0.1', 'localhost', '[::1]' ].includes(url.hostname) &&
+    url.hostname !== remoteHost?.toLowerCase()) {
+    throw new Error('Refusing: the database host is not loopback. Use a disposable local PostgreSQL, ' +
+      'or name an approved disposable server exactly with --allow-remote-host.');
   }
   const name = decodeURIComponent(url.pathname.slice(1));
   if (!name || database !== name) {
@@ -121,21 +127,29 @@ function checkTarget(uri, database) {
   return name;
 }
 
-function psql(sql) {
-  return execFileSync('psql', [ adminUri, '-At', '-v', 'ON_ERROR_STOP=1', '-c', sql ], {
-    encoding: 'utf8'
-  }).trim();
+// The pg client as db-connect resolves it, so no new dependency or tool.
+function pgClient() {
+  const dbConnect = createRequire(import.meta.url).resolve('@apostrophecms/db-connect');
+  const { Client } = createRequire(dbConnect)('pg');
+  return new Client({ connectionString: adminUri });
 }
 
-function terminateBackends() {
-  const quoted = target.replace(/'/g, '\'\'');
-  const count = psql('SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity ' +
-    `WHERE datname = '${quoted}' AND pid <> pg_backend_pid()`);
-  console.log(`Terminated ${count} connection(s).`);
+async function terminateBackends() {
+  const client = pgClient();
+  await client.connect();
+  try {
+    const result = await client.query('SELECT count(pg_terminate_backend(pid)) AS count ' +
+      'FROM pg_stat_activity WHERE datname = $1 AND usename = $2 AND pid <> pg_backend_pid()',
+    [ target, appUser ]);
+    console.log(`Terminated ${result.rows[0].count} connection(s).`);
+  } finally {
+    await client.end();
+  }
 }
 
-// The app as a child process. Records every exit and its stderr tail; with
-// --supervise it starts a new process 2 s after an exit.
+// The app as a child process. Records every exit and whether its stderr
+// showed the connection error; with --supervise it starts a new process 2 s
+// after an exit.
 function startApp() {
   const state = {
     exits: [],
@@ -143,7 +157,11 @@ function startApp() {
     child: null
   };
   const launch = () => {
+    // Checked per chunk before trimming, and on 'close' rather than 'exit'
+    // so that all of stderr has arrived. The crash arrives as one large chunk
+    // (stack plus the pg client object), longer than the kept tail (m1-033).
     let stderr = '';
+    let crash = false;
     const child = spawn(process.execPath, [ 'app' ], {
       env: {
         ...process.env,
@@ -152,16 +170,18 @@ function startApp() {
       stdio: [ 'ignore', 'ignore', 'pipe' ]
     });
     child.stderr.on('data', chunk => {
-      stderr = (stderr + chunk).slice(-4000);
+      const text = stderr + chunk;
+      crash = crash || CRASH_SIGNATURE.test(text);
+      stderr = text.slice(-4000);
     });
-    child.on('exit', code => {
+    child.on('close', code => {
       if (state.stopped) {
         return;
       }
       state.exits.push({
         at: Date.now(),
         code,
-        crash: CRASH_SIGNATURE.test(stderr)
+        crash
       });
       console.log(`App exited (code ${code}).`);
       if (args.supervise) {
@@ -238,13 +258,13 @@ async function cursorScenario() {
   child.stdout.on('data', chunk => {
     output += chunk;
     if (String(chunk).includes('CURSOR-OPEN')) {
-      terminateBackends();
+      terminateBackends().catch(e => console.log(`Terminate failed: ${e.message}`));
     }
   });
   child.stderr.on('data', chunk => {
     output += chunk;
   });
-  const code = await new Promise(resolve => child.on('exit', resolve));
+  const code = await new Promise(resolve => child.on('close', resolve));
   const handled = output.includes('CURSOR-HANDLED');
   results.push({
     name: 'cursor',
