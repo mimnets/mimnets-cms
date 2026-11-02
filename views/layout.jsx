@@ -250,6 +250,21 @@ function Footer({ global = {} }) {
   );
 }
 
+// Signed in only (m1-026): the class tells _assurer.scss to reserve room for
+// the admin bar's context bar before the bar mounts. Same condition as core's
+// context bar (admin-bar getBrowserData and TheAposContextBar.vue) for a
+// single-locale site: a page or piece the user can edit, whose type has the
+// `contextBar` option.
+function contextBarClass(data, apos) {
+  const context = data.piece || data.page;
+  if (!data.user || !context?._edit) {
+    return undefined;
+  }
+  return apos.doc.getManager(context.type)?.options.contextBar
+    ? 'assurer-has-context-bar'
+    : undefined;
+}
+
 export default function (data, { Extend, apos }) {
   // `data.title` is how a page template overrides the title — the JSX
   // equivalent of Nunjucks `{% block title %}`. Templates without a page or
@@ -265,6 +280,7 @@ export default function (data, { Extend, apos }) {
     <Extend
       templateName={data.outerLayout}
       title={title}
+      bodyClass={contextBarClass(data, apos)}
       extraHead={<><FaviconLinks /><DevStyleGuard apos={apos} /></>}
       main={
         <div className="assurer-wrapper">

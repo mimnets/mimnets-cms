@@ -7,6 +7,20 @@ body {
   color: var(--assurer-color-text);
 }
 
+// Signed in only (m1-026). Core mounts the admin bar into this empty element
+// after the first paint, and its spacer then moved the page down. Reserve the
+// bar's height until it mounts: 56 px for the top row (55 px and a 1 px
+// border), 111 px with the context bar (views/layout.jsx adds the class).
+// Values measured with TheAposAdminBar.vue in Apostrophe 4.34.0; check them
+// again after an Apostrophe upgrade.
+#apos-admin-bar:empty {
+  height: 56px;
+}
+
+.assurer-has-context-bar #apos-admin-bar:empty {
+  height: 111px;
+}
+
 .assurer-wrapper {
   display: flex;
   flex-direction: column;
