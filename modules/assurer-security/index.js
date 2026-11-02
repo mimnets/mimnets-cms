@@ -3,6 +3,8 @@
 //
 // - Removes the `X-Powered-By: Express` header.
 // - Limits contact-form submissions per client IP address.
+// - `sanitize-after-restore` task: removes authentication state carried by a
+//   database restore (m1-032, lib/sanitize.js).
 //
 // Form rate limit threat model: one source scripting bulk submissions, which
 // would fill the submission store (personal data) and a future notification
@@ -17,6 +19,7 @@
 // address is `req.ip`, which only honours X-Forwarded-For from proxies listed
 // in APOS_TRUST_PROXY (see lib/config.js).
 import { clientKey, readSecurityEnv } from './lib/config.js';
+import { checkSanitizeArgs, SANITIZE_TARGETS } from './lib/sanitize.js';
 
 const NAMESPACE = 'assurer-form-rate-limit';
 const { formRateLimit } = readSecurityEnv();
@@ -78,6 +81,50 @@ export default {
         async task() {
           await self.apos.cache.clear(NAMESPACE);
           self.apos.util.log('Contact-form rate-limit counters cleared.');
+        }
+      },
+      // Run on every restored copy before it serves traffic (lib/sanitize.js,
+      // database backup and restore runbook). Command line only.
+      'sanitize-after-restore': {
+        usage: 'Remove login sessions, bearer tokens, login-throttle counters and\n' +
+          'password-reset hashes carried over by a database restore.\n' +
+          'Content, users, passwords, form submissions and media are not touched.\n' +
+          'Dry run (default; changes nothing):\n' +
+          '  node app assurer-security:sanitize-after-restore\n' +
+          'Apply (logs everyone out; --database must name the configured database):\n' +
+          '  node app assurer-security:sanitize-after-restore --execute --database=<name>',
+        async task(argv) {
+          const databaseName = self.apos.db.databaseName;
+          const { execute } = checkSanitizeArgs(argv, databaseName);
+          const lines = [ `${execute ? 'SANITIZE' : 'Dry run'}: database "${databaseName}".` ];
+          const report = [];
+          for (const target of SANITIZE_TARGETS) {
+            const collection = self.apos.db.collection(target.collection);
+            const found = await collection.countDocuments(target.filter);
+            let changed = 0;
+            if (execute && found > 0) {
+              const result = target.action === 'delete'
+                ? await collection.deleteMany(target.filter)
+                : await collection.updateMany(target.filter, {
+                  $unset: { [target.field]: 1 }
+                });
+              changed = target.action === 'delete'
+                ? result.deletedCount
+                : result.modifiedCount;
+            }
+            report.push({
+              collection: target.collection,
+              found,
+              changed
+            });
+            lines.push(`  ${target.label} (${target.collection}): ${found} found` +
+              (execute ? `, ${changed} ${target.action === 'delete' ? 'deleted' : 'cleared'}` : ''));
+          }
+          if (!execute) {
+            lines.push(`Nothing changed. To apply: --execute --database=${databaseName}`);
+          }
+          self.apos.util.log(lines.join('\n'));
+          return report;
         }
       }
     };

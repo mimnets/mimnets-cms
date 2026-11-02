@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | **Proposal** (`m1-011`, 2026-10-20). D-DB-5 stays **OPEN**. Nothing here has been run against PostgreSQL in m1-011; no fix is claimed. |
+| **Status** | **Proposal** (`m1-011`, 2026-10-20). D-DB-5 stays **OPEN**. Nothing here has been run against PostgreSQL in m1-011; no fix is claimed. **m1-032 (2026-11-02):** still OPEN. db-connect on npm is still 1.1.0, and its three `new Pool(...)` calls still have no `error` listener. A new duplicate search (GitHub issue search: "postgres", "ECONNRESET", "pg-pool", "db-connect") found no matching issue, so the §2 text stands unchanged. The §4 test is now a script, [`scripts/pg-connection-drop-test.mjs`](../../scripts/pg-connection-drop-test.mjs). It was **not run**: no PostgreSQL is available, and it waits for the D-DB-2 major version and an approved disposable instance. |
 | **Decision** | D-DB-5 (open) · D-DB-6 (Option B: PostgreSQL for development and testing only) |
 | **Proposed task** | The next free task ID when it starts (expected `m1-012` or later; WS-4 form operations may take `m1-012` first) |
 | **Evidence** | [m1-010 report, D15b](../engineering/reports/2026/10/2026-10-20-m1-010-postgresql-compatibility-acceptance.report.md) · [m1-011 report](../engineering/reports/2026/10/2026-10-20-m1-011-security-hardening.report.md) |
@@ -85,6 +85,12 @@ can be approved.
 3. `pg_ctl stop -m immediate`, then start after 30 s → the same measurements.
 4. A long cursor iteration interrupted mid-way.
 5. On an upstream release with the fix: repeat 2–4 **without** the supervisor; it must not exit.
+
+**Script (m1-032, not run yet):** `node --env-file=.env scripts/pg-connection-drop-test.mjs
+--database=<name> [--supervise] [--stop-cmd=… --start-cmd=…]` runs steps 2–4 against a
+loopback PostgreSQL only. `--supervise` restarts the app 2 s after an exit, which stands in for
+mitigation A. For step 5, run it without `--supervise`. Step 1's two instances and
+health-checked proxy depend on the chosen platform (D-DB-7) and are not part of the script.
 
 D-DB-5 closes only after step 5 passes on a released db-connect version, or the owner explicitly
 accepts A+B as the permanent mitigation after steps 2–4 pass.
