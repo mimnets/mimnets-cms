@@ -28,3 +28,4 @@ start (from docs/milestones/m1-029-handoff.md
    about hosted CI on PR #31). The agent read it as approval of D-GIT-27 and as a request to check
    PR #31's CI. It could not: the repository is private (unauthenticated GitHub API: 404) and `gh`
    is not installed.
+4. Message after the push, recorded as given: "PR #31 checks are green".

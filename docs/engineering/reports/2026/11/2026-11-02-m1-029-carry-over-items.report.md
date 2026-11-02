@@ -83,8 +83,8 @@ On `http://127.0.0.1:3000`, logged out, in a new tab, closed afterwards.
 ## Open items
 
 - D-GIT-27: commit and push approved; PR to be opened by the owner, hosted CI to be confirmed on it.
-- D-GIT-26: hosted CI on PR #31 not confirmed. The owner asked the agent to check it; the agent
-  could not (private repository, unauthenticated API 404, no `gh`).
+- D-GIT-26: hosted CI on PR #31 confirmed green by the owner after the push (the agent could not
+  check it: private repository, unauthenticated API 404, no `gh`).
 - Per-file PDF redirects (checklist §7) wait for D-CONTENT-16.
 - Other developers need `APOS_DEMO_SITE=1` in their `.env` for `test:smoke` (documented in
   `.env.example`).

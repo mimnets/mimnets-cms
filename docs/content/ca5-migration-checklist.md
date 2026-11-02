@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Task** | m1-028 ([report](../engineering/reports/2026/11/2026-11-02-m1-028-ca5-preparation.report.md)) |
+| **Task** | m1-028 ([report](../engineering/reports/2026/11/2026-11-02-m1-028-ca5-preparation.report.md)); D-CONTENT-16 decided in m1-030 ([report](../engineering/reports/2026/11/2026-11-02-m1-030-content-entry-decision.report.md)) |
 | **Date** | 2026-11-02 |
 | **Status** | **Preparation only.** Nothing was entered, published or redirected. No business fact here is confirmed: everything about the company comes from the [WordPress inventory](./wordpress-site-inventory.md) (live site, 2026-10-20) and needs the owner's confirmation before reuse (D-CONTENT-12). |
 | **Inputs** | [Inventory](./wordpress-site-inventory.md) (W01–W29) · [IA](./corporate-information-architecture.md) · [Content model](./apostrophe-content-model.md) / [ADR-0003](../architecture/decisions/ADR-0003-corporate-content-model.md) · [SEO plan](./seo-and-migration-plan.md) / [SEO runbook](../runbooks/seo.md) · [Editorial requirements](./editorial-and-design-requirements.md) · code on `origin/main` `0fe607c` |
@@ -12,7 +12,7 @@
 
 | # | Blocker | Why it blocks | Decision |
 |---|---|---|---|
-| B1 | **No target database.** Content entered in the local development database stays there: each site has its own database, and one site's database is never copied into another (AGENTS.md, ADR-0002, [new-site runbook](../runbooks/new-site-initialization.md)). No staging or production database or media store exists yet | Real content typed into the dev database would have to be typed again | **D-CONTENT-16 (new, open)**, §6 |
+| B1 | **No target database.** Content entered in the local development database stays there: each site has its own database, and one site's database is never copied into another (AGENTS.md, ADR-0002, [new-site runbook](../runbooks/new-site-initialization.md)). No staging or production database or media store exists yet | Real content typed into the dev database would have to be typed again | **D-CONTENT-16: closed 2026-11-02, option A** (§6). Entry waits for the staging or production site (D-DB-2, D-DB-3) |
 | B2 | **No approved copy.** The agent does not write business text. Every page needs the owner's text, or the owner's written approval of live-site text | Nothing to enter | D-CONTENT-12 |
 | B3 | **Leadership privacy** (17 people, photos, contact details) | `/leadership` and all `assurer-person` records | D-CONTENT-4 |
 | B4 | **Group company facts**: legal names, roles, relationships of the 9 entities | `/group`, organization records, Organization JSON-LD | D-CONTENT-2 |
@@ -76,7 +76,7 @@ W13–W20, W22–W29, `/feed`, `/?p=1`, `/?page_id=357`, `/download.php`.
 ## 5. Draft-entry checklist (per page or record)
 
 Use it for each row of §2 and §3. Enter content as a non-admin **editor**, in the target
-database (D-CONTENT-16).
+database: the staging or production site (D-CONTENT-16, option A).
 
 **Before entry**
 
@@ -122,9 +122,10 @@ database (D-CONTENT-16).
 | B. Scripted entry from reviewed files | Approved copy kept in files and entered by a project task through Apostrophe APIs, run once per site | Same content in every environment; repeatable; reviewable in Git | New code to write and test; images and alt text still need curation; copy lives in the repository |
 | C. Export and import between sites | An export/import module moves documents and media from one site to another | No retyping | A new dependency (approval, licence and advisory checks); moves selected documents only, never a whole database |
 
-**Agent recommendation:** A. Until then, prepare the content outside the CMS: the owner collects
-approved copy, images and confirmations against §2–§3. The local dev database is for trials only;
-anything entered there is not migrated.
+**Decision (owner, 2026-11-02, m1-030): A.** Content is entered through the UI on the staging or
+production site once it exists (D-DB-2, D-DB-3). Until then, prepare the content outside the CMS:
+the owner collects approved copy, images and confirmations against §2–§3. The local dev database
+is for trials only; anything entered there is not migrated. *(m1-028 agent recommendation: A.)*
 
 ## 7. Work that is not data entry
 
