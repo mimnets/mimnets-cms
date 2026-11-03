@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | **Proposal** (`m1-011`, 2026-10-20). D-DB-5 stays **OPEN**. Nothing here has been run against PostgreSQL in m1-011; no fix is claimed. **m1-032 (2026-11-02):** still OPEN. db-connect on npm is still 1.1.0, and its three `new Pool(...)` calls still have no `error` listener. A new duplicate search (GitHub issue search: "postgres", "ECONNRESET", "pg-pool", "db-connect") found no matching issue, so the §2 text stands unchanged. The §4 test is now a script, [`scripts/pg-connection-drop-test.mjs`](../../scripts/pg-connection-drop-test.mjs). It was **not run**: no PostgreSQL is available, and it waits for the D-DB-2 major version and an approved disposable instance. **m1-033 (2026-11-02): run** on an owner-approved disposable Neon free-plan PostgreSQL 16.15 ([m1-033 report](../engineering/reports/2026/11/2026-11-02-m1-033-pg-connection-drop.report.md)). Step 2 without a supervisor: the process exits (`pg_terminate_backend` takes the same `idleListener` path, so the "not tested" remark in §2 is now tested). Step 2 with `--supervise`: serving again 20 s after the drop. Step 4 (cursor): exits. Step 3 (server restart) and step 1 (two instances) not run. D-DB-5 stays OPEN. |
+| **Status** | **Proposal** (`m1-011`, 2026-10-20). D-DB-5 stays **OPEN**. Nothing here has been run against PostgreSQL in m1-011; no fix is claimed. **m1-032 (2026-11-02):** still OPEN. db-connect on npm is still 1.1.0, and its three `new Pool(...)` calls still have no `error` listener. A new duplicate search (GitHub issue search: "postgres", "ECONNRESET", "pg-pool", "db-connect") found no matching issue, so the §2 text stands unchanged. The §4 test is now a script, [`scripts/pg-connection-drop-test.mjs`](../../scripts/pg-connection-drop-test.mjs). It was **not run**: no PostgreSQL is available, and it waits for the D-DB-2 major version and an approved disposable instance. **m1-033 (2026-11-02): run** on an owner-approved disposable Neon free-plan PostgreSQL 16.15 ([m1-033 report](../engineering/reports/2026/11/2026-11-02-m1-033-pg-connection-drop.report.md)). Step 2 without a supervisor: the process exits (`pg_terminate_backend` takes the same `idleListener` path, so the "not tested" remark in §2 is now tested). Step 2 with `--supervise`: serving again 20 s after the drop. Step 4 (cursor): exits. Step 3 (server restart) and step 1 (two instances) not run. D-DB-5 stays OPEN. **m1-034 (2026-11-03):** steps 1 and 3 run on the same Neon project ([m1-034 report](../engineering/reports/2026/11/2026-11-02-m1-034-pg-restart-two-instances.report.md)). A compute suspend exits the app; with `--supervise`, serving again after 17 s and 20 s. Two instances behind a local health-checked proxy hide a one-instance drop only. Step 5 waits for a fixed release. **m1-035 (2026-11-03):** §2 text updated with the m1-033 and m1-034 results after a new duplicate search (none found); still **not filed** (owner, I6). D-DB-5 stays OPEN. |
 | **Decision** | D-DB-5 (open) · D-DB-6 (Option B: PostgreSQL for development and testing only) |
 | **Proposed task** | The next free task ID when it starts (expected `m1-012` or later; WS-4 form operations may take `m1-012` first) |
 | **Evidence** | [m1-010 report, D15b](../engineering/reports/2026/10/2026-10-20-m1-010-postgresql-compatibility-acceptance.report.md) · [m1-011 report](../engineering/reports/2026/10/2026-10-20-m1-011-security-hardening.report.md) |
@@ -32,34 +32,60 @@
 
 ## 2. Upstream issue (ready to paste; not filed)
 
-No authorized integration was available in m1-011 (`gh` is not installed and no token was used),
-and the owner has not approved the public text. The owner (or an approved integration) can file
-this at <https://github.com/apostrophecms/apostrophe/issues/new>.
+The owner files this at <https://github.com/apostrophecms/apostrophe/issues/new> after reviewing
+the text (I6). `gh` is not installed and no token is used, so the agent does not file it.
+
+**m1-035 (2026-11-03): text updated** with the m1-033 and m1-034 results. Re-checked before the
+update: db-connect on npm and on upstream `main` is still 1.1.0, and `apostrophe` 4.34.0, `pg`
+8.23.1 and `pg-pool` 3.14.0 are still the latest on npm. The installed `adapters/postgres.js` still
+has three `new Pool(...)` calls (main pool, `/postgres` admin pool, reconnect pool) and no
+`'error'` listener. The duplicate search (GitHub issue search API, open and closed, on
+`apostrophecms/apostrophe`: "postgres", "ECONNRESET", "db-connect", "pool error" since
+2026-01-01) found **no matching issue**. #5604 (closed, "Document Versions in core") fixed the
+release of abandoned cursor connections. It does not add pool or client `'error'` listeners, so
+it is linked as related only.
 
 > **Title:** db-connect (postgres): process exits when PostgreSQL drops an idle pooled connection — no `error` listener on the pg Pool
 >
-> **Versions:** apostrophe 4.34.0, @apostrophecms/db-connect 1.1.0, pg 8.23.1, pg-pool 3.14.0, Node 24.21.0, PostgreSQL 16.15.
+> **Versions:** apostrophe 4.34.0, @apostrophecms/db-connect 1.1.0, pg 8.23.1, pg-pool 3.14.0, Node 24.21.0. PostgreSQL 16.15, both self-hosted (local) and managed (Neon, direct endpoint, TLS).
 >
-> **What happens.** With `APOS_DB_URI=postgres://…`, if PostgreSQL closes a connection that is idle in the pool (server restart, failover, `pg_terminate_backend`, a proxy or firewall idle timeout, a network drop), the Node process exits:
+> **What happens.** With `APOS_DB_URI=postgres://…`, if PostgreSQL closes a connection that is idle in the pool, the Node process exits. Causes include a server restart, a failover, `pg_terminate_backend`, a proxy or firewall idle timeout, a managed service suspending its compute, and a network drop. Two stacks we captured:
 >
 > ```
-> node:events:… throw er; // Unhandled 'error' event
-> Error: read ECONNRESET
->     at … (pg-pool/index.js) idleListener
+> Error: read ECONNRESET            (local server, pg_ctl stop -m immediate)
+> Error: terminating connection due to administrator command   (pg_terminate_backend)
+> Emitted 'error' event on BoundPool instance at:
+>     at Client.idleListener (pg-pool/index.js:62)
 > ```
+>
+> In both cases the process exits with code 1. We reproduced this with:
+> - `pg_ctl stop -m immediate` on a local PostgreSQL 16.15;
+> - `pg_terminate_backend` on the app's idle connections, on a managed PostgreSQL 16.15;
+> - a compute suspend and restart through the provider's API, on the same managed PostgreSQL 16.15.
+>
+> A cursor interrupted mid-iteration also exits the process.
 >
 > **Expected.** The app logs the error and keeps running. The pool discards the dead client and opens a new connection on the next query once the database is back, as the MongoDB adapter does.
 >
-> **Cause.** `packages/db-connect/adapters/postgres.js` creates `new Pool(...)` (main pool, the temporary admin pool used for `CREATE DATABASE`, and the reconnect pool) without `pool.on('error', …)`. node-postgres documents that idle clients emit errors through the pool and that an error listener is required; without one, Node treats the event as an unhandled `'error'` and exits. A checked-out cursor client (`_cursorClient`) has the same exposure while it is held between `FETCH` calls.
+> **Cause.** `packages/db-connect/adapters/postgres.js` creates `new Pool(...)` in three places without `pool.on('error', …)`: the main pool, the temporary admin pool used for `CREATE DATABASE`, and the reconnect pool. node-postgres documents that idle clients emit errors through the pool and that an error listener is required. Without one, Node treats the event as an unhandled `'error'` and exits. A checked-out cursor client (`_cursorClient`) has the same exposure while it is held between `FETCH` calls. #5604 fixed how that client is released, but no `'error'` listener is attached while it is held.
 >
 > **Reproduction (minimal).**
 > 1. Start an Apostrophe 4.34.0 project with `APOS_DB_URI=postgres://user:pass@127.0.0.1:5432/db` and load a page, so the pool holds idle connections.
-> 2. While the app is idle, stop PostgreSQL abruptly (`pg_ctl stop -m immediate`). We reproduced it this way, deterministically. `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'db' AND pid <> pg_backend_pid();` should take the same path, but we have not tested it.
-> 3. The Node process exits with the stack above.
+> 2. While the app is idle, run `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'db' AND pid <> pg_backend_pid();` from another session (or stop PostgreSQL with `pg_ctl stop -m immediate`).
+> 3. The Node process exits with the stack above. This happened deterministically in every run.
 >
-> **Suggested fix.** Attach `pool.on('error', (err) => { /* log via the adapter's logger */ })` to every pool `connect()` creates. Attach a client `'error'` listener to the cursor's checked-out client for as long as it is held (release it with the error so the pool destroys it). Add a test that terminates the backend connections and then runs a query.
+> **Suggested fix.**
+> - Attach `pool.on('error', (err) => { /* log via the adapter's logger */ })` to every pool `connect()` creates.
+> - Attach a client `'error'` listener to the cursor's checked-out client for as long as it is held, and release the client with the error so the pool destroys it.
+> - Add a test that terminates the backend connections and then runs a query.
 >
-> **Impact.** Availability only, with no data loss observed (PostgreSQL recovered via WAL, and the last acknowledged write survived). But any database restart, failover or idle-connection timeout kills every app process.
+> **Impact.** Availability only. No data loss was observed: PostgreSQL recovered via WAL, and the last acknowledged write survived. But any database restart, failover or idle-connection timeout kills every app process connected to that database at the same moment.
+>
+> We measured the workarounds:
+> - With a process supervisor that restarts the app 2 s after an exit, the site served again 17–28 s after a drop or restart, and requests failed until then.
+> - Two instances behind a health-checked proxy hid a drop of one instance's connections. They did not help when the database dropped all connections or restarted, because both instances exited together.
+>
+> So redundancy cannot mask this; only a fix in db-connect removes the outage.
 
 ## 3. Mitigation options
 
