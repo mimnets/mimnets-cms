@@ -16,6 +16,13 @@
 //                                starts it again 30 s later
 //     [--port=3033]
 //     [--allow-remote-host=<host>]  accept this exact non-loopback host
+//     [--idle-wait=<seconds>]    also run scenario "idle-wait": no requests
+//                                for this long (e.g. 420 for Neon's 5-minute
+//                                auto-suspend), then check (m1-034)
+//     [--instances=2]            two app instances on the next two ports
+//                                behind a health-checked proxy on --port
+//                                (mitigation B; needs --supervise; m1-034)
+//                                and scenario "one-instance"
 //
 // APOS_DB_URI must be a postgres:// URI on a loopback host, or on the host
 // named by --allow-remote-host; --database must repeat its database name,
@@ -28,19 +35,26 @@
 //   idle-terminate   app idle, pg_terminate_backend on all its connections
 //   server-restart   (with --stop-cmd/--start-cmd) stop PostgreSQL, start it
 //                    after 30 s
+//   one-instance     (with --instances=2) pg_terminate_backend on the first
+//                    instance's connections only
+//   idle-wait        (with --idle-wait) the app gets no requests for the given
+//                    time; nothing is dropped by the script
 //   cursor           a separate process holds a db-connect cursor open across
 //                    FETCH calls while its connection is terminated
 //
 // Without --supervise, a scenario passes only if the process does not exit
 // (the target for a fixed db-connect release, proposal §4 step 5). With
 // --supervise, it passes if the site serves again within 60 s of the drop
-// (steps 2-3). The cursor scenario always passes only without an exit.
-// Exit code 1 on any FAIL.
+// (steps 2-3). With --instances=2, it passes only if no probe failed, that
+// is, no visible outage (step 1). The site is probed every 0.5 s from 1 s
+// after the drop until it serves again (not during idle-wait). The cursor scenario
+// always passes only without an exit. Exit code 1 on any FAIL.
 
 import {
   execSync,
   spawn
 } from 'node:child_process';
+import http from 'node:http';
 import { createRequire } from 'node:module';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { parseArgs } from 'node:util';
@@ -66,7 +80,12 @@ const { values: args } = parseArgs({
       type: 'string',
       default: '3033'
     },
-    'allow-remote-host': { type: 'string' }
+    'allow-remote-host': { type: 'string' },
+    'idle-wait': { type: 'string' },
+    instances: {
+      type: 'string',
+      default: '1'
+    }
   }
 });
 
@@ -75,18 +94,53 @@ const adminUri = process.env.PG_ADMIN_URI || dbUri;
 const target = checkTarget(dbUri, args.database, args['allow-remote-host']);
 const appUser = decodeURIComponent(new URL(dbUri).username);
 const base = `http://127.0.0.1:${args.port}`;
+const instances = Number(args.instances);
+const idleWait = args['idle-wait'] ? Number(args['idle-wait']) : 0;
+if (![ 1, 2 ].includes(instances) || (instances === 2 && !args.supervise)) {
+  throw new Error('--instances must be 1, or 2 with --supervise.');
+}
+if (idleWait && instances === 2) {
+  // The proxy's health checks would keep the database busy.
+  throw new Error('--idle-wait needs --instances=1.');
+}
 const results = [];
 
-const app = startApp();
+const apps = [];
+let proxy = null;
+if (instances === 1) {
+  apps.push(startApp(args.port));
+} else {
+  // Start the second instance once the first serves, so that the two
+  // startups do not run side by side.
+  const ports = [ 1, 2 ].map(offset => String(Number(args.port) + offset));
+  proxy = startProxy(ports);
+  for (const port of ports) {
+    apps.push(startApp(port));
+    await waitForSite(RECOVERY_LIMIT_MS * 2, `http://127.0.0.1:${port}`);
+  }
+}
+const app = {
+  exits: () => apps.flatMap(each => each.state.exits),
+  stop: () => apps.forEach(each => each.stop())
+};
 try {
   await waitForSite(RECOVERY_LIMIT_MS);
+  if (idleWait) {
+    await scenario('idle-wait', () => sleep(idleWait * 1000), { probe: false });
+  }
   await scenario('idle-terminate', () => terminateBackends());
+  if (instances === 2) {
+    await scenario('one-instance', () => terminateBackends(appName(apps[0].port)));
+  }
   if (args['stop-cmd'] && args['start-cmd']) {
-    await scenario('server-restart', async () => {
+    // The start command runs 30 s later while the site is probed, so that the
+    // outage is measured from the stop (m1-034).
+    let restart;
+    await scenario('server-restart', () => {
       execSync(args['stop-cmd'], { stdio: 'inherit' });
-      await sleep(30000);
-      execSync(args['start-cmd'], { stdio: 'inherit' });
+      restart = sleep(30000).then(() => execSync(args['start-cmd'], { stdio: 'inherit' }));
     });
+    await restart;
   } else {
     results.push({
       name: 'server-restart',
@@ -96,6 +150,7 @@ try {
   }
 } finally {
   app.stop();
+  proxy?.close();
 }
 await cursorScenario();
 
@@ -134,14 +189,23 @@ function pgClient() {
   return new Client({ connectionString: adminUri });
 }
 
-async function terminateBackends() {
+// Each app instance connects with its own application_name (PGAPPNAME,
+// read by pg), so that one instance's connections can be dropped alone.
+function appName(port) {
+  return `pg-drop-test-${port}`;
+}
+
+async function terminateBackends(application) {
   const client = pgClient();
   await client.connect();
   try {
-    const result = await client.query('SELECT count(pg_terminate_backend(pid)) AS count ' +
-      'FROM pg_stat_activity WHERE datname = $1 AND usename = $2 AND pid <> pg_backend_pid()',
-    [ target, appUser ]);
-    console.log(`Terminated ${result.rows[0].count} connection(s).`);
+    // Grouped by state, so that a log shows whether they were idle (m1-034).
+    const result = await client.query('SELECT state, count(pg_terminate_backend(pid)) AS count ' +
+      'FROM pg_stat_activity WHERE datname = $1 AND usename = $2 AND pid <> pg_backend_pid() ' +
+      'AND ($3::text IS NULL OR application_name = $3) GROUP BY state',
+    [ target, appUser, application || null ]);
+    const states = result.rows.map(row => `${row.state || 'no state'}: ${row.count}`).join(', ');
+    console.log(`Terminated connection(s): ${states || 'none'}.`);
   } finally {
     await client.end();
   }
@@ -150,7 +214,7 @@ async function terminateBackends() {
 // The app as a child process. Records every exit and whether its stderr
 // showed the connection error; with --supervise it starts a new process 2 s
 // after an exit.
-function startApp() {
+function startApp(port) {
   const state = {
     exits: [],
     stopped: false,
@@ -165,7 +229,8 @@ function startApp() {
     const child = spawn(process.execPath, [ 'app' ], {
       env: {
         ...process.env,
-        PORT: args.port
+        PORT: port,
+        PGAPPNAME: appName(port)
       },
       stdio: [ 'ignore', 'ignore', 'pipe' ]
     });
@@ -183,7 +248,7 @@ function startApp() {
         code,
         crash
       });
-      console.log(`App exited (code ${code}).`);
+      console.log(`App on :${port} exited (code ${code}).`);
       if (args.supervise) {
         setTimeout(() => !state.stopped && launch(), 2000);
       }
@@ -192,6 +257,7 @@ function startApp() {
   };
   launch();
   return {
+    port,
     state,
     stop() {
       state.stopped = true;
@@ -200,12 +266,89 @@ function startApp() {
   };
 }
 
-async function waitForSite(limitMs) {
+// Stands in for a load balancer (mitigation B): round robin over the
+// instances that answered GET / with 200 at the last check (every 1 s),
+// 503 when none did. No retries, like a plain proxy.
+function startProxy(ports) {
+  const backends = ports.map(port => ({
+    port,
+    healthy: false
+  }));
+  let next = 0;
+  const check = () => backends.forEach(backend => {
+    fetch(`http://127.0.0.1:${backend.port}/`, { signal: AbortSignal.timeout(2000) })
+      .then(res => {
+        backend.healthy = res.status === 200;
+      })
+      .catch(() => {
+        backend.healthy = false;
+      });
+  });
+  const timer = setInterval(check, 1000);
+  const server = http.createServer((req, res) => {
+    const healthy = backends.filter(backend => backend.healthy);
+    if (!healthy.length) {
+      res.writeHead(503).end();
+      return;
+    }
+    const backend = healthy[next++ % healthy.length];
+    const upstream = http.request({
+      host: '127.0.0.1',
+      port: backend.port,
+      method: req.method,
+      path: req.url,
+      headers: req.headers
+    }, upstreamRes => {
+      res.writeHead(upstreamRes.statusCode, upstreamRes.headers);
+      upstreamRes.pipe(res);
+    });
+    upstream.on('error', () => {
+      if (!res.headersSent) {
+        res.writeHead(502);
+      }
+      res.end();
+    });
+    req.pipe(upstream);
+  }).listen(Number(args.port), '127.0.0.1');
+  return {
+    close() {
+      clearInterval(timer);
+      server.close();
+    }
+  };
+}
+
+// Requests GET / every 0.5 s until stopped; counts the answers other
+// than 200.
+function startProbing() {
+  const probes = {
+    total: 0,
+    failed: 0,
+    stopped: false
+  };
+  (async () => {
+    while (!probes.stopped) {
+      probes.total++;
+      try {
+        const res = await fetch(`${base}/`, { signal: AbortSignal.timeout(2000) });
+        if (res.status !== 200) {
+          probes.failed++;
+        }
+      } catch {
+        probes.failed++;
+      }
+      await sleep(500);
+    }
+  })();
+  return probes;
+}
+
+async function waitForSite(limitMs, url = base) {
   const start = Date.now();
   let failed = 0;
   while (Date.now() - start < limitMs) {
     try {
-      const res = await fetch(`${base}/`, { signal: AbortSignal.timeout(2000) });
+      const res = await fetch(`${url}/`, { signal: AbortSignal.timeout(2000) });
       if (res.status === 200) {
         return {
           ms: Date.now() - start,
@@ -221,28 +364,46 @@ async function waitForSite(limitMs) {
   throw new Error(`The site did not answer 200 within ${limitMs / 1000} s.`);
 }
 
-async function scenario(name, drop) {
-  const exitsBefore = app.state.exits.length;
+async function scenario(name, drop, { probe = true } = {}) {
+  const exitsBefore = app.exits().length;
   await sleep(3000);
   const droppedAt = Date.now();
   await drop();
+  // Probing from the drop itself would check out the dropped connection
+  // before its error arrives, which hides the idle-client crash (m1-034).
+  await sleep(probe ? 1000 : 0);
+  const probes = probe ? startProbing() : null;
+  // idle-wait counts from the end of the wait.
+  const from = probe ? droppedAt : Date.now();
   // Idle pooled connections report the loss on their own; give them time.
-  await sleep(5000);
-  const exits = app.state.exits.slice(exitsBefore);
+  await sleep(4000);
+  const exits = app.exits().slice(exitsBefore);
   let recovery = null;
   try {
     recovery = await waitForSite(RECOVERY_LIMIT_MS);
   } catch {
     // reported below
   }
+  if (probes) {
+    probes.stopped = true;
+  }
   const exited = exits.length > 0;
   const detail = [
     exited ? `exited ${exits.length}x${exits.some(exit => exit.crash) ? ' (connection error)' : ''}` : 'no exit',
     recovery
-      ? `serving ${Math.round((Date.now() - droppedAt) / 1000)} s after the drop, ${recovery.failed} failed probe(s)`
-      : 'not serving after 60 s'
+      ? `serving ${Math.round((Date.now() - from) / 1000)} s after the ${probe ? 'drop' : 'wait'}`
+      : 'not serving after 60 s',
+    probes ? `${probes.failed} of ${probes.total} probes failed` : 'not probed during the wait'
   ].join('; ');
-  const pass = args.supervise ? Boolean(recovery) : !exited && Boolean(recovery);
+  const pass = instances === 2
+    ? Boolean(recovery) && probes?.failed === 0
+    : args.supervise ? Boolean(recovery) : !exited && Boolean(recovery);
+  if (instances === 2) {
+    // Both instances up again before the next scenario.
+    for (const each of apps) {
+      await waitForSite(RECOVERY_LIMIT_MS * 2, `http://127.0.0.1:${each.port}`).catch(() => {});
+    }
+  }
   results.push({
     name,
     outcome: pass ? 'PASS' : 'FAIL',

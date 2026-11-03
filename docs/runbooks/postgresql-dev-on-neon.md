@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft. **Verified 2026-11-02 (`m1-033`):** §2 (console setup, by the owner), §3 (migrate, seed, test suites on PostgreSQL 16.15), §4 runs 1 and 2 and the sanitize task. **Not executed:** the §4 server-restart flags (Neon API), the 5-minute auto-suspend observation, and §5 export/import. |
+| **Status** | Draft. **Verified 2026-11-02 (`m1-033`):** §2 (console setup, by the owner), §3 (migrate, seed, test suites on PostgreSQL 16.15), §4 runs 1 and 2 and the sanitize task. **Verified 2026-11-03 (`m1-034`):** §4 server restart through the Neon API, one 7-minute idle wait, and two instances (mitigation B). **Not executed:** §5 export/import. |
 | **Purpose** | A disposable, free PostgreSQL 16 server for the D-DB-5 connection-drop test ([proposal](../milestones/m1-d-db-5-postgresql-connection-loss-proposal.md) §4, [`scripts/pg-connection-drop-test.mjs`](../../scripts/pg-connection-drop-test.mjs)) and short development checks. It is **not** staging or production, and it **does not decide D-DB-2** (managed provider and region). |
 | **Owner direction** | m1-033: "go with Neon, approve the script change" ([m1-033 prompt](../engineering/prompts/2026/11/2026-11-02-m1-033-pg-connection-drop.prompt.md)). |
 | **Alternative** | [PostgreSQL 16 in Docker on the owner's OCI server](./postgresql-dev-on-oci-docker.md) (not chosen; kept as a fallback) |
@@ -23,9 +23,12 @@
 ## 1. Free-plan behaviour that matters here
 
 - **Scale to zero after 5 idle minutes.** It cannot be turned off on the free plan. When the
-  compute suspends, Neon closes the open connections, so the app exits (that is the D-DB-5
-  defect). Under `npm run dev`, `nodemon` then waits: type `rs` to restart. Keep SQLite for
-  everyday work.
+  compute suspends, Neon closes the open connections, and an app connection that is open at that
+  moment makes the app exit (D-DB-5; seen in m1-034 with a suspend through the API). In m1-034
+  the compute did **not** auto-suspend during a 7-minute idle wait (Neon operations log), so the
+  effect of an auto-suspend on an idle app was not observed. Under `npm run dev`, `nodemon` then
+  waits: type `rs` to restart. Neon starts the compute again on the next connection. Keep SQLite
+  for everyday work.
 - **The PostgreSQL major version is fixed per project.** It is chosen when the project is created.
 - **Direct versus pooled endpoints.** Neon offers a pooled host (`…-pooler…`, PgBouncer in
   transaction mode) and a direct host. Use the **direct** host: the cursor scenario holds a
@@ -84,18 +87,36 @@ node --env-file=.env scripts/pg-connection-drop-test.mjs --database=<database> -
 ```
 
 **Server-restart scenario (optional).** Neon's API can suspend and start the compute. That needs
-a Neon API key, the project ID and the endpoint ID, all kept in `.env` (`NEON_API_KEY`,
-`NEON_PROJECT_ID`, `NEON_ENDPOINT_ID`). Add these flags to run 2 (Windows `cmd` syntax, because
-the script runs the commands through the shell):
+a Neon API key, the project ID and the **endpoint** ID, all kept in `.env` (`NEON_API_KEY`,
+`NEON_PROJECT_ID`, `NEON_ENDPOINT_ID`). The endpoint ID starts with `ep-` and is the first part
+of the host name, not the `br-…` branch ID. Use a dedicated API key and revoke
+it after the test. Check the values with
+`node --env-file=.env scripts/neon-endpoint.mjs status`, then add these flags to run 2:
 
 ```sh
---stop-cmd="curl -fsS -X POST -H \"Authorization: Bearer %NEON_API_KEY%\" https://console.neon.tech/api/v2/projects/%NEON_PROJECT_ID%/endpoints/%NEON_ENDPOINT_ID%/suspend"
---start-cmd="curl -fsS -X POST -H \"Authorization: Bearer %NEON_API_KEY%\" https://console.neon.tech/api/v2/projects/%NEON_PROJECT_ID%/endpoints/%NEON_ENDPOINT_ID%/start"
+--stop-cmd="node --env-file=.env scripts/neon-endpoint.mjs suspend"
+--start-cmd="node --env-file=.env scripts/neon-endpoint.mjs start"
 ```
 
-Without them, the script records `server-restart` as NOT RUN. The 5-minute auto-suspend is the
-same kind of event and can be observed by hand: leave the app idle for more than 5 minutes and
-record whether it exits.
+[`scripts/neon-endpoint.mjs`](../../scripts/neon-endpoint.mjs) (m1-034) uses Node's built-in
+`fetch`, prints only the HTTP status and the endpoint state, and exits 0 on an API error. The
+`curl -f` commands in the m1-033 version of this runbook would abort the test, because Neon
+starts the compute on its own when the supervised app reconnects (m1-034 run 1: 5 s after the
+suspend in Neon's operations log), before the start command runs. Without the flags, the script records
+`server-restart` as NOT RUN.
+
+**Idle wait.** `--idle-wait=<seconds>` sends no requests for that long, then checks for exits.
+To see whether the compute suspended in that time, read the project's operations
+(`suspend_compute`, `start_compute`) in the console or through the API. Keep the console closed
+during the wait. In m1-034 run 1 no auto-suspend happened in one 7-minute wait; see the
+[m1-034 report](../engineering/reports/2026/11/2026-11-02-m1-034-pg-restart-two-instances.report.md).
+
+**Two instances (mitigation B).** `--supervise --instances=2` runs two app instances on the next
+two ports behind a small health-checked proxy (built-in `node:http`) on `--port`, and adds the
+`one-instance` scenario. Each instance has its own `pg` pool (default size 10); in m1-034 the free
+plan served both. Result: the proxy hides a drop of one instance's connections (0 failed probes),
+but a drop of all connections or a server restart crashes both instances, so the site is down
+until the supervisor restarts them (m1-034 run 2: 17 s and 20 s).
 
 Then run the sanitize task against the same database (D-DB-6):
 `node app assurer-security:sanitize-after-restore` (dry run), then
@@ -104,8 +125,9 @@ Then run the sanitize task against the same database (D-DB-6):
 What this covers:
 - **Covered:** proposal §4 steps 2 and 4 (and step 3 with the API flags) against PostgreSQL 16 on
   a managed service with a proxy in front, which is close to production conditions.
-- **Not covered:** step 1 (two instances behind a health-checked proxy, D-DB-7) and step 5 (needs
-  a fixed db-connect release).
+- **Covered since m1-034:** step 1 with a local stand-in proxy (not the D-DB-7 load balancer);
+  mitigation B alone does not prevent an outage when the database drops every connection.
+- **Not covered:** step 5 (needs a fixed db-connect release).
 - **D-DB-6 Linux repeat test: only in part.** The database runs on Linux, but the app runs on
   Windows, and Neon is not the chosen staging provider.
 
