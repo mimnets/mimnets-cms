@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | **Accepted.** PostgreSQL for staging and production remains conditional on the acceptance test (§6). **2026-10-20 (`m1-010`):** acceptance test run; agent recommendation **B, provisionally accepted with defined blockers** (§9), awaiting the owner (D-DB-6). Not a production commitment. **2026-10-20 (`m1-011`): the owner decided D-DB-6 = Option B.** PostgreSQL is provisionally accepted for development and further testing only, and is **not approved for staging or production**. SQLite stays the local default and MongoDB the fallback. No production database is selected. D-DB-5 is still open. |
+| **Status** | **Accepted.** PostgreSQL for staging and production remains conditional on the acceptance test (§6). **2026-10-20 (`m1-010`):** acceptance test run; agent recommendation **B, provisionally accepted with defined blockers** (§9), awaiting the owner (D-DB-6). Not a production commitment. **2026-10-20 (`m1-011`): the owner decided D-DB-6 = Option B.** PostgreSQL is provisionally accepted for development and further testing only, and is **not approved for staging or production**. SQLite stays the local default and MongoDB the fallback. No production database is selected. D-DB-5 is still open. **2026-11-04 (`m1-038`): the owner decided MongoDB (Community Server) as the engine for staging and production (D-DB-8)**, replacing the PostgreSQL direction of m1-031. The owner prefers self-hosting on Hetzner (provider and region wait for the DPO, D-DB-2). The PostgreSQL blockers (D-DB-5, D-DB-6) no longer block staging. §3 deviation preferred by the owner: media on the server disk with a nightly versioned copy to an EU bucket ([m1-038 report](../../engineering/reports/2026/11/2026-11-04-m1-038-hosting-inputs.report.md)). |
 | **Approved by** | Project owner, 2026-10-19 (recorded in the [m0-004 prompt](../../engineering/prompts/2026/10/2026-10-19-m0-004-safe-git-initialization.prompt.md)) |
 | **Date** | 2026-10-19 |
 | **Task** | `m0-003` · report: [`2026-10-19-m0-003-database-strategy.report.md`](../../engineering/reports/2026/10/2026-10-19-m0-003-database-strategy.report.md) |
@@ -167,6 +167,11 @@ proposal for M1 and has not been built.
 Targets (RPO/RTO) are decision D-DB-4 in the register. Proposed: RPO ≤ 24 h (≤ 15 min with PITR),
 RTO ≤ 4 h. **A backup counts only after a restore drill succeeds.** Run one quarterly into an
 isolated environment, then run the acceptance checks against it.
+
+**2026-11-04 (`m1-038`): D-DB-4 decided by the business owner.** Database RPO ≤ 15 min (PITR),
+media RPO ≤ 24 h, RTO ≤ 4 h, PITR retention **7 days**, encrypted portable exports at each release
+and monthly (12 kept), quarterly restore drill. Provider and region (D-DB-2, D-DB-3, D-DB-7) are
+still open.
 
 ## 6. PostgreSQL acceptance test (gate for this ADR)
 
