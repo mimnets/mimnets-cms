@@ -23,9 +23,27 @@
 // (m1-014) Creates a non-admin account with the core `editor` role from
 // APOS_TEST_EDITOR_USER and APOS_TEST_EDITOR_PASSWORD, for the content-model
 // suite's permission checks. Same safety checks; idempotent.
-import { editorRefuseReason, refuseReason } from './lib/guard.js';
+//
+//   node app assurer-test:ensure-contributor
+//
+// (m1-037, D-CONTENT-11) Creates a non-admin account with the core
+// `contributor` role from APOS_TEST_CONTRIBUTOR_USER and
+// APOS_TEST_CONTRIBUTOR_PASSWORD, for the publishing-workflow suite.
+// Same safety checks; idempotent.
+import {
+  contributorRefuseReason, editorRefuseReason, refuseReason
+} from './lib/guard.js';
 
-const TASKS = [ 'assurer-test:ensure-admin', 'assurer-test:backdate-submissions', 'assurer-test:ensure-editor' ];
+const TASKS = [
+  'assurer-test:ensure-admin',
+  'assurer-test:backdate-submissions',
+  'assurer-test:ensure-editor',
+  'assurer-test:ensure-contributor'
+];
+const GUARDS = {
+  'assurer-test:ensure-editor': editorRefuseReason,
+  'assurer-test:ensure-contributor': contributorRefuseReason
+};
 
 // Refuse before Apostrophe connects to the database or runs migrations.
 // `.env` has already been loaded by app.js at this point.
@@ -36,7 +54,7 @@ for (const task of TASKS) {
 }
 
 function assertSafe(task) {
-  const check = task === 'assurer-test:ensure-editor' ? editorRefuseReason : refuseReason;
+  const check = GUARDS[task] || refuseReason;
   const reason = check(process.env);
   if (reason) {
     throw new Error(`Refusing to run ${task}: ${reason}.`);
@@ -61,6 +79,12 @@ export default {
         usage: 'Create the test editor from APOS_TEST_EDITOR_USER / APOS_TEST_EDITOR_PASSWORD ' +
           'on a temporary SQLite database.\nUsage: node app assurer-test:ensure-editor',
         task: () => self.ensureEditor()
+      },
+      'ensure-contributor': {
+        usage: 'Create the test contributor from APOS_TEST_CONTRIBUTOR_USER / ' +
+          'APOS_TEST_CONTRIBUTOR_PASSWORD on a temporary SQLite database.\n' +
+          'Usage: node app assurer-test:ensure-contributor',
+        task: () => self.ensureContributor()
       }
     };
   },
@@ -104,6 +128,26 @@ export default {
           password: process.env.APOS_TEST_EDITOR_PASSWORD
         });
         self.apos.util.log('Test editor created.');
+      },
+
+      async ensureContributor() {
+        assertSafe(TASKS[3]);
+        const req = self.apos.task.getReq();
+        const username = process.env.APOS_TEST_CONTRIBUTOR_USER;
+        const existing = await self.apos.user.find(req, { username })
+          .archived(null)
+          .toObject();
+        if (existing) {
+          self.apos.util.log('Test contributor already exists; nothing changed.');
+          return;
+        }
+        await self.apos.user.insert(req, {
+          username,
+          title: username,
+          role: 'contributor',
+          password: process.env.APOS_TEST_CONTRIBUTOR_PASSWORD
+        });
+        self.apos.util.log('Test contributor created.');
       },
 
       async backdateSubmissions(argv) {
