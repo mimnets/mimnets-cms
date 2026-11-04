@@ -3,6 +3,7 @@
 | | |
 |---|---|
 | **Status** | **Options paper** (`m1-031`, 2026-11-02). Agent-prepared; **not a decision**. No provider chosen, no account created, nothing provisioned |
+| **m1-038 (2026-11-04)** | Owner inputs I2–I5 recorded and **D-DB-4 decided** (7-day PITR, 15-minute RPO); I1 waits for the DPO. The owner then chose **MongoDB** (D-DB-8) and prefers **Hetzner, self-hosted, Singapore** (§10) over the shortlist; this paper's PostgreSQL shortlist is kept as history. See the [m1-038 report](../engineering/reports/2026/11/2026-11-04-m1-038-hosting-inputs.report.md) and the decision register |
 | **Decisions** | D-DB-2 (PostgreSQL provider and region) · D-DB-3 (media store) · D-DB-4 (RPO/RTO) · D-DB-7 (application hosting, new) · related: D-DB-5, D-DB-6, D-CONTENT-15, D-CONTENT-16 |
 | **Engine** | **PostgreSQL**. Owner direction in m1-031: "ok, stick with postgres, continue". MongoDB remains the ADR-0002 fallback only. MySQL is not an option: `@apostrophecms/db-connect` 1.1.0 ships only `mongodb`, `postgres` and `sqlite` adapters |
 | **Depends on** | [ADR-0002](../architecture/decisions/ADR-0002-database-strategy.md) · [D-DB-5 proposal](./m1-d-db-5-postgresql-connection-loss-proposal.md) · [backup protection plan](../runbooks/backup-protection-plan.md) · [deployment principles](../runbooks/deployment-principles.md) |
@@ -239,3 +240,39 @@ Retrieved 2026-11-02. Numbering matches the m1-031 research notes.
 62. docs.cloud.google.com/run/docs/locations
 63. docs.digitalocean.com/products/app-platform/how-to/manage-health-checks/
 64. freedesktop.org/software/systemd/man/latest/systemd.service.html
+
+## 10. Hetzner self-hosted (m1-038 addendum)
+
+Added 2026-11-04 at the owner's request ("can you please consider using Hetzner - self-hosted
+server with monogodb or supabase?"). Facts from Hetzner documentation, retrieved 2026-11-04
+(sources 70–73).
+
+| | Hetzner Cloud, self-hosted |
+|---|---|
+| Locations | Falkenstein, Nuremberg (DE), Helsinki (FI), Ashburn, Hillsboro (US), **Singapore** [70]. No India or Middle East |
+| Singapore limits | Cloud servers (shared and dedicated AMD), volumes, backups, snapshots, firewalls, networks, load balancers; no dedicated root servers [70] |
+| Object Storage | S3-compatible, **EU only** (fsn1, nbg1, hel1) [71]; versioning and object lock yes, replication no, lifecycle only `NoncurrentDays` [72] |
+| Price | "from €5.99" (cost-optimized) or "from €6.49" (regular) per month excl. VAT [73]; Singapore prices not verified |
+| Database | Self-hosted; Hetzner offers no managed database |
+| Backups | Hetzner Backups are daily server images (crash-consistent); database PITR needs our own tooling |
+| Supervision (R6) | systemd `Restart=always` [64] |
+
+Database on Hetzner:
+
+- **MongoDB** (Community Server, SSPL): Apostrophe's native engine; avoids D-DB-5. PITR needs a
+  replica set (one node is enough) and a continuous backup tool. No built-in encryption at rest
+  in Community: use full-disk encryption on the server.
+- **PostgreSQL**: possible, but D-DB-5 and the D-DB-6 blockers stay.
+- **Supabase**: not recommended. Hosted Supabase fails R7 (§3). Self-hosted Supabase is
+  PostgreSQL plus about ten services Apostrophe does not use (API gateway, auth, REST, realtime,
+  studio), each to patch and secure.
+
+Fit with the inputs: within the budget (I3), and possible in Singapore if the DPO accepts it
+(I1). It does **not** fit I4 (in-house, limited ops): the team runs the OS, firewall, TLS proxy,
+MongoDB, backups and monitoring. The agent recommended option C for that reason; the owner chose
+Hetzner, with MongoDB (D-DB-8), a backup tool to keep the 15-minute RPO (D-DB-4), and media on the
+server disk with a nightly copy to a versioned EU bucket (D-DB-3).
+
+Sources: 70. docs.hetzner.com/cloud/general/locations/ · 71.
+docs.hetzner.com/storage/object-storage/overview/ · 72.
+docs.hetzner.com/storage/object-storage/supported-actions/ · 73. hetzner.com/cloud/

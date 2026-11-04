@@ -34,7 +34,7 @@ records (D-M0-9).
 | Algorithm | Public-key file encryption (recommended: `age`, X25519 + ChaCha20-Poly1305), or 7-Zip AES-256 with a long random passphrase if a new tool is not approved | Same as development for exports. KMS keys for provider snapshots |
 | Key custody | Private key or passphrase in the owner's password manager, plus one offline copy (printed or on a hardware token) in a separate physical place. Never in the repository, `.env`, the backup folder or chat. | Two named custodians; a key in the organisation's secret store; break-glass procedure written down; rotation yearly and when a custodian leaves |
 | Access | Owner account only (as today) | Backup bucket in a separate account or project; write-only credentials for the backup job; read access only for named restore operators; access logged |
-| Retention | Delete a backup once a newer verified backup supersedes it (m0-004 archive first) | Per D-DB-4 (proposed: 14 days PITR, 12 monthly exports) |
+| Retention | Delete a backup once a newer verified backup supersedes it (m0-004 archive first) | Per D-DB-4 (decided m1-038: 7 days PITR, 12 monthly exports) |
 | Restore verification | Decrypt and restore into a **new** throwaway database, then run `npm run test:smoke` | Quarterly drill (runbook §G) into an isolated environment, with a dated report |
 | Secrets in dumps | Before any copy to another environment, run the "sanitize after restore" task (D-DB-6 blocker): drop sessions and bearer tokens and rotate `APOS_SESSION_SECRET` | Same |
 
