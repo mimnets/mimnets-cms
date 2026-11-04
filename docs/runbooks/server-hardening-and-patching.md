@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | **Draft, not yet executed** (`m1-039`, 2026-11-04). No server, account or bucket exists. Nothing in this runbook approves an account, spending, a tool install or a provider choice. §12 choices 1–5 and 8 answered by the owner (`m1-040`, 2026-11-04); 6 and 7 wait for the local MongoDB test run |
+| **Status** | **Draft, not yet executed** (`m1-039`, 2026-11-04). No server, account or bucket exists. Nothing in this runbook approves an account, spending, a tool install or a provider choice. §12 choices 1–5 and 8 answered by the owner (`m1-040`, 2026-11-04); 6 and 7 wait for a MongoDB test run (`m1-041`: the project's driver chain supports MongoDB up to 8.2, D-DB-9) |
 | **Task** | [m1-039 report](../engineering/reports/2026/11/2026-11-04-m1-039-hardening-runbook.report.md) · [m1-040 report](../engineering/reports/2026/11/2026-11-04-m1-040-hardening-choices.report.md) (§12 answers) |
 | **Applies to** | The owner's preferred stack ([hosting options paper](../milestones/m1-031-hosting-options.md) §10): one Hetzner Cloud server per site in Singapore, Ubuntu LTS, MongoDB Community Server (D-DB-8), the Node app under systemd behind a TLS proxy, media on the server disk with a nightly copy to a versioned EU bucket |
 | **Waits for** | D-DB-2, D-DB-3 and D-DB-7 (DPO input I1). §12 choices 6 and 7 |
@@ -282,7 +282,8 @@ All rows are **NOT EXECUTED**: no server exists.
 ## 12. Open choices (owner, with ops)
 
 Choices 1–5 and 8 answered by the owner in session on 2026-11-04 (m1-040), each the agent
-suggestion except choice 3. Choices 6 and 7 are left to the local MongoDB test run, as planned.
+suggestion except choice 3. Choices 6 and 7 are left to a MongoDB test run, as planned. In m1-041 the owner skipped the
+local run; no suites have run against MongoDB yet (D-DB-9).
 A decision here approves no tool install, account or spending: each tool still needs its own
 approval with the license and advisory check.
 
@@ -293,8 +294,8 @@ approval with the license and advisory check.
 | 3 | TLS proxy (§8) | nginx · Caddy | either; Caddy renews certificates by itself, nginx is more widely known | **nginx** (2026-11-04, owner); needs an ACME client, a separate tool approval |
 | 4 | Reboot handling (§4) | automatic window · weekly manual | follows choice 1: manual if the data area needs unlocking | **Follows choice 1, so weekly manual** (2026-11-04, owner) |
 | 5 | SSH source addresses (§3) | fixed admin addresses · any address (keys only) | fixed addresses if the admins have them | **Fixed admin addresses** (2026-11-04, owner); the addresses are supplied in the staging task |
-| 6 | MongoDB major version (§6) | 8.x · 9.x | the newest the Node driver supports, decided in the local MongoDB task | Open: deferred to the local MongoDB test run (2026-11-04, owner) |
-| 7 | `javascriptEnabled: false` (§6) | on · off | on, if the suites pass against it | Open: deferred to the local MongoDB test run (2026-11-04, owner) |
+| 6 | MongoDB major version (§6) | 8.x · 9.x | the newest the Node driver supports, decided in the local MongoDB task | Open: deferred to the local MongoDB test run (2026-11-04, owner). **m1-041:** Apostrophe 4.34.0 accepts only `mongodb` driver 6.x, which supports servers up to **8.2**, so 9.x is ruled out until Apostrophe accepts driver 7 (D-DB-9, owner chose C) |
+| 7 | `javascriptEnabled: false` (§6) | on · off | on, if the suites pass against it | Open: deferred to the local MongoDB test run (2026-11-04, owner). **m1-041:** not tested; no MongoDB is connected to the project (D-DB-9) |
 | 8 | Uptime and alert monitoring | an external uptime check · none | an external check of `https://<host>/` with email alerts | **External uptime check with email alerts** (2026-11-04, owner); the service is chosen later, with approval |
 
 ## 13. Sources
