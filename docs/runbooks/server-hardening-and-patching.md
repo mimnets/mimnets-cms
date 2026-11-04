@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| **Status** | **Draft, not yet executed** (`m1-039`, 2026-11-04). No server, account or bucket exists. Nothing in this runbook approves an account, spending, a tool install or a provider choice |
-| **Task** | [m1-039 report](../engineering/reports/2026/11/2026-11-04-m1-039-hardening-runbook.report.md) |
+| **Status** | **Draft, not yet executed** (`m1-039`, 2026-11-04). No server, account or bucket exists. Nothing in this runbook approves an account, spending, a tool install or a provider choice. §12 choices 1–5 and 8 answered by the owner (`m1-040`, 2026-11-04); 6 and 7 wait for the local MongoDB test run |
+| **Task** | [m1-039 report](../engineering/reports/2026/11/2026-11-04-m1-039-hardening-runbook.report.md) · [m1-040 report](../engineering/reports/2026/11/2026-11-04-m1-040-hardening-choices.report.md) (§12 answers) |
 | **Applies to** | The owner's preferred stack ([hosting options paper](../milestones/m1-031-hosting-options.md) §10): one Hetzner Cloud server per site in Singapore, Ubuntu LTS, MongoDB Community Server (D-DB-8), the Node app under systemd behind a TLS proxy, media on the server disk with a nightly copy to a versioned EU bucket |
-| **Waits for** | D-DB-2, D-DB-3 and D-DB-7 (DPO input I1). The open choices in §12 |
+| **Waits for** | D-DB-2, D-DB-3 and D-DB-7 (DPO input I1). §12 choices 6 and 7 |
 | **Related** | [ADR-0002](../architecture/decisions/ADR-0002-database-strategy.md) · [deployment principles](./deployment-principles.md) · [HTTP security and HTTPS proxy](./security-configuration.md) · [backup protection plan](./backup-protection-plan.md) · [backup and restore](./database-backup-and-restore.md) · D-DB-4 · D-DB-8 |
 | **Facts as of** | 2026-11-04, from vendor documentation (sources in §13). Re-check versions before use |
 
@@ -18,7 +18,7 @@ credentials. Never copy one site's database into another.
 
 | Component | Listens on | Reachable from |
 |---|---|---|
-| TLS proxy (nginx or Caddy, §12) | `0.0.0.0:80`, `0.0.0.0:443` (and IPv6) | the internet |
+| TLS proxy (nginx, §12 choice 3) | `0.0.0.0:80`, `0.0.0.0:443` (and IPv6) | the internet |
 | SSH | `22` | admin addresses only (§3) |
 | Node app (`npm run serve`) | `127.0.0.1:3000` (project default `ADDRESS`) | the proxy only |
 | `mongod` | `127.0.0.1:27017` | the app and backup tool on the same server |
@@ -56,7 +56,7 @@ outbound [1][2]). Inbound rules:
 
 | Port | Source | Why |
 |---|---|---|
-| TCP 22 | admin addresses only (§12, choice 5) | SSH |
+| TCP 22 | the admins' fixed addresses only (§12 choice 5, decided) | SSH |
 | TCP 80 | any | ACME HTTP challenge and redirect to HTTPS |
 | TCP 443 | any | the site |
 
@@ -92,6 +92,8 @@ machine, ports 27017, 3000 and 22 (from a non-admin address) do not connect.
 
    or reboot by hand each week when `/var/run/reboot-required` exists. On a single server a reboot
    is a short outage. The choice depends on disk encryption (§5, §12 choice 1).
+   **Decided (§12 choice 4, m1-040): weekly manual reboot**, announced in advance, because the
+   data volume (§5, option B) needs unlocking after each reboot. Leave `Automatic-Reboot` off.
 5. Remove or disable services that are not needed. Persistent `journald` with a size cap
    (`SystemMaxUse=1G` in `/etc/systemd/journald.conf.d/size.conf`).
 6. MongoDB host settings [4]: data on **XFS** (strongly recommended for WiredTiger),
@@ -118,8 +120,9 @@ protect a running, compromised server. Hetzner Backups and snapshots of an encry
 only ciphertext, so they are useless without the passphrase. The passphrase lives in the secret
 store, never on the server.
 
-Agent suggestion (not a decision): **B**, with manual reboots announced in advance, because the
-RTO (D-DB-4, ≤ 4 h) allows a manual unlock and the OS stays reachable for patching.
+**Decided 2026-11-04 (m1-040, owner, §12 choice 1): B**, with manual reboots announced in
+advance, because the RTO (D-DB-4, ≤ 4 h) allows a manual unlock and the OS stays reachable for
+patching. The LUKS setup is still untested; the first staging task tries it.
 
 ## 6. MongoDB
 
@@ -141,7 +144,7 @@ net:
     CAFile: /etc/mongodb/tls/ca.pem
 security:
   authorization: enabled
-  keyFile: /etc/mongodb/keyfile   # or x.509 member authentication (§12 choice 2)
+  keyFile: /etc/mongodb/keyfile   # staging only; x.509 member authentication on production (§12 choice 2)
   javascriptEnabled: false        # only if the suites pass with it (§12 choice 7)
 replication:
   replSetName: rs0                # one member; needed for PITR (D-DB-4)
@@ -150,7 +153,8 @@ replication:
 Steps, from MongoDB's replica set tutorial [8] and security checklist [6]:
 
 1. Create the key file with `openssl rand -base64 756`, owner `mongodb`, mode `400`. MongoDB says
-   key files are for test and development and recommends x.509 for production [8] (§12 choice 2).
+   key files are for test and development and recommends x.509 for production [8]. Decided
+   (§12 choice 2): **x.509 on production; a key file is acceptable on staging**.
 2. Create a private CA and a server certificate for TLS. Keep the CA key off the server.
 3. Start `mongod`, connect through `127.0.0.1` (the localhost exception), run `rs.initiate()`
    with one member, then **at once** create the user administrator. The localhost exception
@@ -216,7 +220,9 @@ WantedBy=multi-user.target
 
 ## 8. TLS proxy
 
-Choice open (§12 choice 3). Whichever is used must:
+**nginx** (§12 choice 3, decided in m1-040). Installing it needs a tool approval. nginx does not
+renew certificates by itself: requirement 1 needs an ACME client as well (for example certbot),
+which is a separate tool approval with the license and advisory check. The proxy must:
 
 1. Redirect HTTP to HTTPS, serve TLS 1.2 or later, and renew Let's Encrypt (ACME) certificates
    automatically.
@@ -275,16 +281,21 @@ All rows are **NOT EXECUTED**: no server exists.
 
 ## 12. Open choices (owner, with ops)
 
-| # | Choice | Options | Agent suggestion |
-|---|---|---|---|
-| 1 | Disk encryption (§5) | A full disk · B data volume · C none (risk acceptance) | B, manual announced reboots |
-| 2 | MongoDB member authentication | key file (MongoDB: test and development) · x.509 | x.509 for production; a key file is acceptable on staging |
-| 3 | TLS proxy (§8) | nginx · Caddy | either; Caddy renews certificates by itself, nginx is more widely known |
-| 4 | Reboot handling (§4) | automatic window · weekly manual | follows choice 1: manual if the data area needs unlocking |
-| 5 | SSH source addresses (§3) | fixed admin addresses · any address (keys only) | fixed addresses if the admins have them |
-| 6 | MongoDB major version (§6) | 8.x · 9.x | the newest the Node driver supports, decided in the local MongoDB task |
-| 7 | `javascriptEnabled: false` (§6) | on · off | on, if the suites pass against it |
-| 8 | Uptime and alert monitoring | an external uptime check · none | an external check of `https://<host>/` with email alerts |
+Choices 1–5 and 8 answered by the owner in session on 2026-11-04 (m1-040), each the agent
+suggestion except choice 3. Choices 6 and 7 are left to the local MongoDB test run, as planned.
+A decision here approves no tool install, account or spending: each tool still needs its own
+approval with the license and advisory check.
+
+| # | Choice | Options | Agent suggestion | Decision |
+|---|---|---|---|---|
+| 1 | Disk encryption (§5) | A full disk · B data volume · C none (risk acceptance) | B, manual announced reboots | **B, LUKS data volume** (2026-11-04, owner) |
+| 2 | MongoDB member authentication | key file (MongoDB: test and development) · x.509 | x.509 for production; a key file is acceptable on staging | **x.509 on production; key file acceptable on staging** (2026-11-04, owner) |
+| 3 | TLS proxy (§8) | nginx · Caddy | either; Caddy renews certificates by itself, nginx is more widely known | **nginx** (2026-11-04, owner); needs an ACME client, a separate tool approval |
+| 4 | Reboot handling (§4) | automatic window · weekly manual | follows choice 1: manual if the data area needs unlocking | **Follows choice 1, so weekly manual** (2026-11-04, owner) |
+| 5 | SSH source addresses (§3) | fixed admin addresses · any address (keys only) | fixed addresses if the admins have them | **Fixed admin addresses** (2026-11-04, owner); the addresses are supplied in the staging task |
+| 6 | MongoDB major version (§6) | 8.x · 9.x | the newest the Node driver supports, decided in the local MongoDB task | Open: deferred to the local MongoDB test run (2026-11-04, owner) |
+| 7 | `javascriptEnabled: false` (§6) | on · off | on, if the suites pass against it | Open: deferred to the local MongoDB test run (2026-11-04, owner) |
+| 8 | Uptime and alert monitoring | an external uptime check · none | an external check of `https://<host>/` with email alerts | **External uptime check with email alerts** (2026-11-04, owner); the service is chosen later, with approval |
 
 ## 13. Sources
 
