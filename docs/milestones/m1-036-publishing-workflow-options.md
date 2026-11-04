@@ -7,6 +7,7 @@
 | **Decides** | Business owner |
 | **Needed by** | Staff rollout (any non-developer editors) |
 | **Basis** | Installed `apostrophe` 4.34.0 source (Community Edition) and this project's modules. No code changed; the contributor flow is **not yet tested** in this project (§6) |
+| **m1-037 note** | Implemented and tested in m1-037. Two corrections to this paper: see §8 |
 
 ## 1. Summary
 
@@ -106,3 +107,18 @@ repository.
 
 **Option B**, decided by the owner in session on 2026-11-03 (D-CONTENT-11). Still open: how many
 approvers there will be.
+
+## 8. Corrections from m1-037 (2026-11-03)
+
+Found when the flow was tested in m1-037 ([report](../engineering/reports/2026/11/2026-11-03-m1-037-publishing-workflow.report.md)).
+The sections above are left as written.
+
+1. **Contributors cannot add media.** Core gives images, files and their tags `editRole: 'editor'`.
+   A contributor can upload a raw attachment but cannot add it to the media library; they choose
+   images an editor has added. §1 ("upload images and files") and §4 ("an image a contributor
+   uploads") are wrong for contributors. Media still publishes at once when an editor adds it.
+2. **Delete of a published document's draft.** Core `canDelete()` lets a contributor delete any
+   draft. For published content the API answers 403, but only after the draft is removed, which
+   leaves the live copy without a draft. m1-037 adds a guard that refuses first
+   (`modules/@apostrophecms/doc/index.js`, owner approval in session). §2 point 5 holds for archive,
+   not for this delete. Upstream report: D-SEC-3 (c).

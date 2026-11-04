@@ -20,7 +20,9 @@
 // corporate demo seed twice (it must add nothing the second time) and runs
 // the content-model suite before and after a restart. m1-018 adds the SEO
 // suite, seeds the legacy redirects twice while the server is stopped and,
-// after the restart, requests every legacy URL (one 301 hop each).
+// after the restart, requests every legacy URL (one 301 hop each). m1-037
+// adds a test contributor (assurer-test:ensure-contributor) and runs the
+// publishing-workflow suite (D-CONTENT-11) before and after a restart.
 // Uses Node built-ins only.
 
 import { spawn } from 'node:child_process';
@@ -45,11 +47,13 @@ const secret = randomBytes(32).toString('hex');
 const password = randomBytes(24).toString('hex');
 const smtpPassword = randomBytes(24).toString('hex');
 const editorPassword = randomBytes(24).toString('hex');
+const contributorPassword = randomBytes(24).toString('hex');
 if (process.env.GITHUB_ACTIONS === 'true') {
   // Workflow commands: these lines are consumed by the runner, not logged.
   console.log(`::add-mask::${secret}`);
   console.log(`::add-mask::${password}`);
   console.log(`::add-mask::${editorPassword}`);
+  console.log(`::add-mask::${contributorPassword}`);
   console.log(`::add-mask::${smtpPassword}`);
 }
 const emptyEnvFile = path.join(work, 'empty.env');
@@ -71,6 +75,8 @@ const env = {
   APOS_TEST_PASSWORD: password,
   APOS_TEST_EDITOR_USER: 'ci-editor',
   APOS_TEST_EDITOR_PASSWORD: editorPassword,
+  APOS_TEST_CONTRIBUTOR_USER: 'ci-contributor',
+  APOS_TEST_CONTRIBUTOR_PASSWORD: contributorPassword,
   PORT,
   ADDRESS: '127.0.0.1',
   BASE_URL,
@@ -210,6 +216,7 @@ async function steps() {
   }
   return await run('create test admin (assurer-test:ensure-admin)', [ 'app', 'assurer-test:ensure-admin' ]) &&
     await run('create test editor (assurer-test:ensure-editor)', [ 'app', 'assurer-test:ensure-editor' ]) &&
+    await run('create test contributor (assurer-test:ensure-contributor)', [ 'app', 'assurer-test:ensure-contributor' ]) &&
     await run('seed demo content (assurer-demo:seed)', [ 'app', 'assurer-demo:seed' ]) &&
     await run('seed corporate demo records (assurer-demo:seed-corporate)', [ 'app', 'assurer-demo:seed-corporate' ]) &&
     await run('seed corporate demo records again (must add nothing)', [ 'app', 'assurer-demo:seed-corporate' ]) &&
@@ -218,6 +225,7 @@ async function steps() {
     await run('editor workflow test', [ 'scripts/editor-workflow-test.mjs' ]) &&
     await run('content model test', [ 'scripts/content-model-test.mjs' ], { CONTENT_TEST_DISPOSABLE: '1' }) &&
     await run('SEO test', [ 'scripts/seo-test.mjs' ], { SEO_TEST_DISPOSABLE: '1' }) &&
+    await run('publishing workflow test', [ 'scripts/publishing-workflow-test.mjs' ], { PUBLISH_TEST_DISPOSABLE: '1' }) &&
     await stopServer().then(() => run('seed legacy redirects (assurer-seo:seed-redirects)', [
       'app', 'assurer-seo:seed-redirects', '--strict'
     ])) &&
@@ -226,6 +234,9 @@ async function steps() {
     await run('persistence test after restart', [ 'scripts/editor-workflow-test.mjs', '--verify-only' ]) &&
     await run('content model persistence after restart', [ 'scripts/content-model-test.mjs', '--verify-only' ], {
       CONTENT_TEST_DISPOSABLE: '1'
+    }) &&
+    await run('publishing workflow persistence after restart', [ 'scripts/publishing-workflow-test.mjs', '--verify-only' ], {
+      PUBLISH_TEST_DISPOSABLE: '1'
     }) &&
     await run('legacy redirect map test', [ 'scripts/seo-test.mjs', '--redirects' ], { SEO_TEST_DISPOSABLE: '1' }) &&
     await stopServer().then(() => startServer('forms', formsEnv)) &&

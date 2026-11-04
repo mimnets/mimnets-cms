@@ -34,6 +34,16 @@ export function editorRefuseReason(env, options) {
   }, options)?.replace(/APOS_TEST_(USER|PASSWORD)/, 'APOS_TEST_EDITOR_$1') || null;
 }
 
+// The same checks for `assurer-test:ensure-contributor` (m1-037), which reads
+// APOS_TEST_CONTRIBUTOR_USER and APOS_TEST_CONTRIBUTOR_PASSWORD instead.
+export function contributorRefuseReason(env, options) {
+  return refuseReason({
+    ...env,
+    APOS_TEST_USER: env.APOS_TEST_CONTRIBUTOR_USER,
+    APOS_TEST_PASSWORD: env.APOS_TEST_CONTRIBUTOR_PASSWORD
+  }, options)?.replace(/APOS_TEST_(USER|PASSWORD)/, 'APOS_TEST_CONTRIBUTOR_$1') || null;
+}
+
 // Returns a reason to refuse unless NODE_ENV is not production and
 // APOS_DB_URI is a sqlite:// file under the OS temp directory or RUNNER_TEMP.
 // Also used by `assurer-demo:seed-corporate` (m1-014).
