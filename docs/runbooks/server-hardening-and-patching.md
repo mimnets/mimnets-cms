@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| **Status** | **Draft, not yet executed** (`m1-039`, 2026-11-04). No server, account or bucket exists. Nothing in this runbook approves an account, spending, a tool install or a provider choice. §12 choices 1–5 and 8 answered by the owner (`m1-040`, 2026-11-04); 6 and 7 wait for a MongoDB test run (`m1-041`: the project's driver chain supports MongoDB up to 8.2, D-DB-9) |
-| **Task** | [m1-039 report](../engineering/reports/2026/11/2026-11-04-m1-039-hardening-runbook.report.md) · [m1-040 report](../engineering/reports/2026/11/2026-11-04-m1-040-hardening-choices.report.md) (§12 answers) |
+| **Status** | **Draft, not yet executed** (`m1-039`, 2026-11-04). No server, account or bucket exists. Nothing in this runbook approves an account, spending, a tool install or a provider choice. §12 choices 1–5 and 8 answered by the owner (`m1-040`, 2026-11-04); 6 and 7 answered by the owner (`m1-044`, 2026-11-06). **The app-and-MongoDB parts (§6, §7) still describe packages and systemd. The owner has since chosen one container (D-DB-10 (b), `m1-044`), so they need rewriting before use** |
+| **Task** | [m1-039 report](../engineering/reports/2026/11/2026-11-04-m1-039-hardening-runbook.report.md) · [m1-040 report](../engineering/reports/2026/11/2026-11-04-m1-040-hardening-choices.report.md) (§12 answers) · [m1-044 report](../engineering/reports/2026/11/2026-11-06-m1-044-mongodb-decisions.report.md) (§12 choices 6 and 7, D-DB-10 (b)) |
 | **Applies to** | The owner's preferred stack ([hosting options paper](../milestones/m1-031-hosting-options.md) §10): one Hetzner Cloud server per site in Singapore, Ubuntu LTS, MongoDB Community Server (D-DB-8), the Node app under systemd behind a TLS proxy, media on the server disk with a nightly copy to a versioned EU bucket |
-| **Waits for** | D-DB-2, D-DB-3 and D-DB-7 (DPO input I1). §12 choices 6 and 7 |
+| **Waits for** | D-DB-2, D-DB-3 and D-DB-7 (DPO input I1). The rewrite for one container (D-DB-10 (b)) |
 | **Related** | [ADR-0002](../architecture/decisions/ADR-0002-database-strategy.md) · [deployment principles](./deployment-principles.md) · [HTTP security and HTTPS proxy](./security-configuration.md) · [backup protection plan](./backup-protection-plan.md) · [backup and restore](./database-backup-and-restore.md) · D-DB-4 · D-DB-8 |
 | **Facts as of** | 2026-11-04, from vendor documentation (sources in §13). Re-check versions before use |
 
@@ -126,9 +126,10 @@ patching. The LUKS setup is still untested; the first staging task tries it.
 
 ## 6. MongoDB
 
-Install from MongoDB's official apt repository (tool approval needed). Pick the major version in
-the local MongoDB task, after checking it against the installed Node driver (`mongodb` 6.21.0)
-in MongoDB's driver compatibility table (not verified in m1-039).
+Install from MongoDB's official apt repository (tool approval needed). Decided (§12 choice 6,
+m1-044): **MongoDB 8.0.x**, at 8.0.34 or newer. Under D-DB-10 (b), MongoDB runs in the one container
+instead of from apt; this section needs rewriting for that. The security settings below still
+apply.
 
 `/etc/mongod.conf` (outline; verify every key against the chosen version's reference):
 
@@ -145,7 +146,7 @@ net:
 security:
   authorization: enabled
   keyFile: /etc/mongodb/keyfile   # staging only; x.509 member authentication on production (§12 choice 2)
-  javascriptEnabled: false        # only if the suites pass with it (§12 choice 7)
+  javascriptEnabled: false        # decided, §12 choice 7 (m1-044)
 replication:
   replSetName: rs0                # one member; needed for PITR (D-DB-4)
 ```
@@ -177,6 +178,9 @@ Ongoing [6]: watch MongoDB's security alerts and end-of-life dates, apply patch 
 review network rules, rotate database user passwords.
 
 ## 7. The app under systemd
+
+> **Replaced in direction by D-DB-10 (b), m1-044:** the app runs in the one container, not under
+> systemd. This section stays as it was until the rewrite, and must not be followed as written.
 
 Per the [deployment principles](./deployment-principles.md): releases are replaceable code;
 `data/`, uploads and `.env` live outside the release; build, migrate, then switch.
@@ -282,8 +286,8 @@ All rows are **NOT EXECUTED**: no server exists.
 ## 12. Open choices (owner, with ops)
 
 Choices 1–5 and 8 answered by the owner in session on 2026-11-04 (m1-040), each the agent
-suggestion except choice 3. Choices 6 and 7 are left to a MongoDB test run, as planned. In m1-041 the owner skipped the
-local run; no suites have run against MongoDB yet (D-DB-9).
+suggestion except choice 3. Choices 6 and 7 answered by the owner in session on 2026-11-06 (m1-044),
+each the agent suggestion, from the m1-043 test results.
 A decision here approves no tool install, account or spending: each tool still needs its own
 approval with the license and advisory check.
 
@@ -294,8 +298,8 @@ approval with the license and advisory check.
 | 3 | TLS proxy (§8) | nginx · Caddy | either; Caddy renews certificates by itself, nginx is more widely known | **nginx** (2026-11-04, owner); needs an ACME client, a separate tool approval |
 | 4 | Reboot handling (§4) | automatic window · weekly manual | follows choice 1: manual if the data area needs unlocking | **Follows choice 1, so weekly manual** (2026-11-04, owner) |
 | 5 | SSH source addresses (§3) | fixed admin addresses · any address (keys only) | fixed addresses if the admins have them | **Fixed admin addresses** (2026-11-04, owner); the addresses are supplied in the staging task |
-| 6 | MongoDB major version (§6) | 8.x · 9.x | the newest the Node driver supports, decided in the local MongoDB task | Open: deferred to the local MongoDB test run (2026-11-04, owner). **m1-041:** Apostrophe 4.34.0 accepts only `mongodb` driver 6.x, which supports servers up to **8.2**, so 9.x is ruled out until Apostrophe accepts driver 7 (D-DB-9, owner chose C) |
-| 7 | `javascriptEnabled: false` (§6) | on · off | on, if the suites pass against it | Open: deferred to the local MongoDB test run (2026-11-04, owner). **m1-041:** not tested; no MongoDB is connected to the project (D-DB-9) |
+| 6 | MongoDB major version (§6) | 8.x · 9.x | the newest the Node driver supports, decided in the local MongoDB task | **8.0.x, at 8.0.34 or newer** (2026-11-06, owner, m1-044). All suites passed on 8.0.34 (m1-043). **m1-041:** Apostrophe 4.34.0 accepts only `mongodb` driver 6.x, which supports servers up to **8.2**, so 9.x is ruled out until Apostrophe accepts driver 7 (D-DB-9, owner chose C) |
+| 7 | `javascriptEnabled: false` (§6) | on · off | on, if the suites pass against it | **On** (2026-11-06, owner, m1-044). All suites passed with it on, and browser search worked (m1-043) |
 | 8 | Uptime and alert monitoring | an external uptime check · none | an external check of `https://<host>/` with email alerts | **External uptime check with email alerts** (2026-11-04, owner); the service is chosen later, with approval |
 
 ## 13. Sources

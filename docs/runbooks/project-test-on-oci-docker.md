@@ -327,8 +327,8 @@ approval.
 | Browser checks (§7.2) | |
 | Anything skipped or left over | |
 
-Once a task has run this, update the Status line at the top and mark the verified steps. Propose
-the §12 choice 6 and 7 results to the owner. The test result does not decide them.
+Once a task has run this, update the Status line at the top and mark the verified steps. The owner
+decided §12 choices 6 and 7 in m1-044, so a failure here reopens them with the owner.
 
 ## 9. Clean up
 
@@ -353,5 +353,6 @@ the §12 choice 6 and 7 results to the owner. The test result does not decide th
 - Keep the Docker images patched while this stays running: check MongoDB's security alerts, change
   the image tag, then run `docker compose pull` and `docker compose up -d`. Stay within the 8.0
   line unless the owner approves a change (D-DB-9).
-- If you later want the Docker setup for staging, that needs its own task and an update to the
-  hardening runbook, which assumes systemd today.
+- The owner chose one container for staging and production (D-DB-10 (b), m1-044). That setup needs
+  its own task and an update to the hardening runbook, which assumes systemd today. The two-container
+  design here remains for this disposable test only.
