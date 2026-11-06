@@ -4,7 +4,7 @@
 |---|---|
 | **Status** | Built and tested on the owner's PC (`m1-043`, 2026-11-06, agent-executed). See the [m1-043 report](../engineering/reports/2026/11/2026-11-06-m1-043-docker-one-container.report.md) |
 | **Purpose** | One image that holds the Apostrophe app and MongoDB 8.0.34, with demo content, for demos and tests |
-| **Not for** | Staging or production. D-DB-10 (b) is still open, and D-DB-11 limits the default password to this demo use |
+| **Not for** | Staging or production **as it stands**. The owner chose one container for those sites too (D-DB-10 (b), `m1-044`), but this image is the demo build. D-DB-11 limits the default password and demo content to demo and test use. §5 lists what a staging version still needs |
 | **Files** | [`Dockerfile`](../../Dockerfile) · [`compose.yaml`](../../compose.yaml) · [`docker/entrypoint.sh`](../../docker/entrypoint.sh) · [`docker/mongod.conf`](../../docker/mongod.conf) · [`.dockerignore`](../../.dockerignore) |
 
 > **Default login: user `admin`, password `admin` (owner's direction, D-DB-11).**
@@ -95,6 +95,9 @@ the owner's approval. Running it on the OCI server also needs approval (D-DB-10)
   site. The database connection stays inside the container on `127.0.0.1`.
 - **Plain HTTP.** Secure cookies need `APOS_HTTPS=1` and a TLS proxy
   ([security configuration](./security-configuration.md)).
+- **First start always seeds demo content and creates `admin`.** If `ASSURER_ADMIN_PASSWORD` is not
+  set, the password is `admin`. A staging version must remove this fallback and the seed, and add
+  TLS, x.509 on production (hardening runbook §12 choice 2) and a backup tool.
 - **Inside the container the app listens on `0.0.0.0`,** which Docker's port publishing needs. The
   host side stays on `127.0.0.1` through the `ports:` line. Docker's published ports go around a
   server's firewall rules, so never change it to a public address without a proxy in front.
