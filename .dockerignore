@@ -1,0 +1,29 @@
+# Secrets, databases and media never enter the image.
+.env
+.env.*
+!.env.example
+data
+backups
+evidence
+public/uploads
+**/*.jsonl
+**/*.dump
+**/*.sql
+**/*.sqlite
+**/*.db
+**/*.db-shm
+**/*.db-wal
+
+# Rebuilt inside the image, or not needed there.
+node_modules
+apos-build
+public/apos-frontend
+release-id
+.git
+.github
+.claude
+.vibecode
+docs
+compose.yaml
+Dockerfile
+.dockerignore
