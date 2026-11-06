@@ -4,6 +4,7 @@
 |---|---|
 | **Status** | **Proposal, not executed** (`m1-011`, 2026-10-20). Nothing was encrypted, moved, uploaded or deleted. Each step below needs the owner's approval (D-M0-9). |
 | **Related** | D-M0-9 · [backup and restore runbook](./database-backup-and-restore.md) · ADR-0002 §3 and §5 |
+| **m1-045 note** | The backup tool direction, PBM (D-DB-12), needs storage credentials that can delete, which conflicts with the write-only rule in §2. The owner accepts this for now, subject to test. The mitigation is object lock, not yet tested ([options paper](../milestones/m1-045-backup-tool-options.md#42-conflict-storage-credentials-can-delete-backups)) |
 
 ## 1. Current state (observed 2026-10-20, metadata only)
 

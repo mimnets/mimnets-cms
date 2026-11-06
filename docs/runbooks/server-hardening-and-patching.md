@@ -166,7 +166,7 @@ Steps, from MongoDB's replica set tutorial [8] and security checklist [6]:
    |---|---|---|
    | `siteAdmin` (break-glass) | `userAdminAnyDatabase`, `clusterAdmin` | admins, by hand only |
    | `assurerApp` | `readWrite` on the site database only | the app |
-   | `assurerBackup` | `backup` (and `restore` only on the restore target) | the backup tool |
+   | `assurerBackup` | `backup` (and `restore` only on the restore target) | the backup tool. **m1-045:** PBM (D-DB-12) needs far more, including `anyAction`; see the [options paper](../milestones/m1-045-backup-tool-options.md#41-conflict-the-pbm-user-is-far-more-powerful-than-the-runbook-planned) |
 
    Optionally limit each user to `127.0.0.1` with `authenticationRestrictions` [6].
 5. App connection string in the app's environment file (§7), never in Git:
@@ -239,8 +239,9 @@ which is a separate tool approval with the license and advisory check. The proxy
 ## 9. Backups and media copy
 
 - **Database:** a continuous backup tool against the one-member replica set, for 7-day PITR and a
-  15-minute RPO (D-DB-4). The tool is approved in principle only; choosing it is a separate task
-  with the license and advisory check. The backup account (`assurerBackup`) and the target's
+  15-minute RPO (D-DB-4). **Direction: Percona Backup for MongoDB, subject to a local proof of
+  concept (D-DB-12, m1-045; [options paper](../milestones/m1-045-backup-tool-options.md)).** No install
+  is approved. The backup account (`assurerBackup`) and the target's
   credentials are separate from the app's (backup protection plan §2).
 - **Portable exports:** encrypted `apos-db-dump` at each release and monthly, 12 kept (D-DB-4),
   per the [backup and restore runbook](./database-backup-and-restore.md).
