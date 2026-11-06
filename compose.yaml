@@ -1,0 +1,25 @@
+# docker compose up -d --build, then open http://localhost:3042/
+# Guide: docs/runbooks/docker-single-container.md
+name: assurer
+
+services:
+  site:
+    build: .
+    image: assurer-site:local
+    restart: unless-stopped
+    stop_grace_period: 60s
+    ports:
+      - "127.0.0.1:3042:3000" # This PC only. MongoDB is not published at all.
+    environment:
+      APOS_BASE_URL: http://localhost:3042
+    volumes:
+      - mongo-data:/data/db
+      - secrets:/data/secrets
+      - uploads:/app/public/uploads
+      - app-data:/app/data
+
+volumes:
+  mongo-data:
+  secrets:
+  uploads:
+  app-data:

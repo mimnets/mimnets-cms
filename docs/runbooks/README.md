@@ -14,3 +14,4 @@ actually run.
 | [Disposable PostgreSQL 16 on Neon (free plan), D-DB-5 test, export/import](./postgresql-dev-on-neon.md) | Draft; §2–§4 verified (m1-033, m1-034); export/import not executed |
 | [Server hardening and patching (Hetzner Cloud, self-hosted MongoDB)](./server-hardening-and-patching.md) | Draft — not yet executed (m1-039); §12 choices 1–5 and 8 decided (m1-040); 6 and 7 open, MongoDB 8.2 is the driver limit (m1-041) |
 | [Install and test the project on the owner's OCI server (Docker, MongoDB 8.0.x)](./project-test-on-oci-docker.md) | Draft — not yet executed (m1-042); disposable test only |
+| [The whole project in one Docker container](./docker-single-container.md) | Built and tested locally (m1-043); demo and test use only (D-DB-11) |
