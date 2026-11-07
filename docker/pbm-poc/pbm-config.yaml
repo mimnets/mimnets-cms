@@ -1,0 +1,11 @@
+# PBM configuration for the proof of concept (m1-046). Backups go to local
+# disk only, in the test's own volume. No storage credentials.
+storage:
+  type: filesystem
+  filesystem:
+    path: /backups
+pitr:
+  enabled: true
+  oplogSpanMin: 10 # PBM's default slice length.
+backup:
+  compression: s2

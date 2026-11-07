@@ -1,0 +1,97 @@
+# PBM proof of concept (m1-046). Disposable: its own images, containers and
+# volumes, separate from the demo site (project "assurer"). Run from the
+# repository root:
+#   ASSURER_ADMIN_PASSWORD=... docker compose -f docker/pbm-poc/compose.yaml up -d --build
+# For arm64, also set DOCKER_DEFAULT_PLATFORM=linux/arm64 and
+# PBM_POC_TAG_SUFFIX=-arm64, so the amd64 tags stay (amd64 and arm64 only).
+# Guide: docs/milestones/m1-046-pbm-poc-results.md
+name: assurer-pbm-poc
+
+x-pbm-build: &pbm-build
+  context: ../..
+  dockerfile: docker/pbm-poc/Dockerfile
+  args:
+    BASE_IMAGE: pbm-poc-base
+  additional_contexts:
+    pbm-poc-base: service:base
+
+services:
+  # The demo image, built from the unchanged root Dockerfile under its own tag,
+  # so the demo site's image is not touched.
+  base:
+    build:
+      context: ../..
+    image: assurer-site:pbm-poc-base${PBM_POC_TAG_SUFFIX:-}
+    profiles: [build-only]
+    # The base must follow DOCKER_DEFAULT_PLATFORM too; Compose does not pass it
+    # on to a service used only as a build context.
+    platform: ${DOCKER_DEFAULT_PLATFORM:-}
+
+  site:
+    build: *pbm-build
+    image: assurer-site:pbm-poc${PBM_POC_TAG_SUFFIX:-}
+    restart: unless-stopped
+    stop_grace_period: 60s
+    ports:
+      - "127.0.0.1:3043:3000" # This PC only.
+    environment:
+      APOS_BASE_URL: http://localhost:3043
+      ASSURER_ADMIN_PASSWORD: ${ASSURER_ADMIN_PASSWORD:?set a test password for the first start}
+    volumes:
+      - site-mongo-data:/data/db
+      - site-secrets:/data/secrets
+      - site-uploads:/app/public/uploads
+      - site-app-data:/app/data
+      - site-backups:/backups
+
+  # Copies what a rebuild would get back from elsewhere: the secrets (the
+  # backup's database users have the source's passwords), the media and the
+  # backups. The restore container gets its own copy, never write access to the
+  # source's backups.
+  restore-copy:
+    image: assurer-site:pbm-poc${PBM_POC_TAG_SUFFIX:-}
+    profiles: [restore]
+    entrypoint: ["bash", "-c"]
+    command:
+      - >-
+        cp -a /from/secrets/. /data/secrets/ &&
+        rm -f /data/secrets/.database-ready /data/secrets/.pbm-configured &&
+        cp -a /from/uploads/. /app/public/uploads/ &&
+        cp -a /from/backups/. /backups/
+    volumes:
+      - site-secrets:/from/secrets:ro
+      - site-uploads:/from/uploads:ro
+      - site-backups:/from/backups:ro
+      - restore-secrets:/data/secrets
+      - restore-uploads:/app/public/uploads
+      - restore-backups:/backups
+
+  # Starts empty, in restore mode. After `pbm restore`, recreate it with
+  # PBM_POC_RESTORE_MODE=site to run the migrations and the app.
+  restore:
+    image: assurer-site:pbm-poc${PBM_POC_TAG_SUFFIX:-}
+    profiles: [restore]
+    stop_grace_period: 60s
+    ports:
+      - "127.0.0.1:3044:3000" # This PC only.
+    environment:
+      APOS_BASE_URL: http://localhost:3044
+      PBM_POC_MODE: ${PBM_POC_RESTORE_MODE:-restore}
+    volumes:
+      - restore-mongo-data:/data/db
+      - restore-secrets:/data/secrets
+      - restore-uploads:/app/public/uploads
+      - restore-app-data:/app/data
+      - restore-backups:/backups
+
+volumes:
+  site-mongo-data:
+  site-secrets:
+  site-uploads:
+  site-app-data:
+  site-backups:
+  restore-mongo-data:
+  restore-secrets:
+  restore-uploads:
+  restore-app-data:
+  restore-backups:
