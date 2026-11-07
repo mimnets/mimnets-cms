@@ -1,0 +1,57 @@
+# Litestream proof of concept (m1-048). Disposable: its own image, containers
+# and volumes, separate from the demo site (project "assurer"). Run from the
+# repository root:
+#   ASSURER_ADMIN_PASSWORD=... docker compose -f docker/litestream-poc/compose.yaml up -d --build site
+# For arm64, also set DOCKER_DEFAULT_PLATFORM=linux/arm64 and
+# LITESTREAM_POC_TAG_SUFFIX=-arm64, so the amd64 tag stays.
+# Guide: docs/milestones/m1-048-litestream-poc-results.md
+name: assurer-litestream-poc
+
+services:
+  site:
+    build:
+      context: ../..
+      dockerfile: docker/litestream-poc/Dockerfile
+    image: assurer-site:litestream-poc${LITESTREAM_POC_TAG_SUFFIX:-}
+    restart: unless-stopped
+    stop_grace_period: 60s
+    ports:
+      - "127.0.0.1:3045:3000" # This PC only.
+    environment:
+      APOS_BASE_URL: http://localhost:3045
+      ASSURER_ADMIN_PASSWORD: ${ASSURER_ADMIN_PASSWORD:?set a test password for the first start}
+    volumes:
+      - site-db:/data/db
+      - site-secrets:/data/secrets
+      - site-uploads:/app/public/uploads
+      - site-replica:/replica
+
+  # Restores into its own new, empty database volume from a read-only view of
+  # the site's replica, then runs the app and replicates to its own replica.
+  # Set LITESTREAM_POC_RESTORE_TIMESTAMP (RFC 3339, UTC) for a point in time.
+  restore:
+    image: assurer-site:litestream-poc${LITESTREAM_POC_TAG_SUFFIX:-}
+    profiles: [restore]
+    stop_grace_period: 60s
+    ports:
+      - "127.0.0.1:3046:3000" # This PC only.
+    environment:
+      APOS_BASE_URL: http://localhost:3046
+      LITESTREAM_POC_RESTORE: "1"
+      LITESTREAM_POC_RESTORE_TIMESTAMP: ${LITESTREAM_POC_RESTORE_TIMESTAMP:-}
+    volumes:
+      - restore-db:/data/db
+      - restore-secrets:/data/secrets
+      - restore-uploads:/app/public/uploads
+      - restore-replica:/replica
+      - site-replica:/replica-source:ro
+
+volumes:
+  site-db:
+  site-secrets:
+  site-uploads:
+  site-replica:
+  restore-db:
+  restore-secrets:
+  restore-uploads:
+  restore-replica:

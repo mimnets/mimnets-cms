@@ -1,0 +1,20 @@
+# Litestream 0.5.18 settings for the proof of concept (m1-048). Replicas go to
+# a local directory only; no S3, no account. Defaults are kept on purpose
+# (m1-047 options paper §4.5): sync every second, snapshots every 24 h,
+# retention 24 h.
+
+# Prometheus metrics, inside the container only (not published).
+addr: "127.0.0.1:9090"
+
+logging:
+  level: info
+
+dbs:
+  - path: /data/db/assurer.sqlite
+    replica:
+      url: file:///replica/assurer
+  # P4: an apos-db-restore target. AGENTS.md allows a restore only into a new,
+  # empty database, so the restore check never touches the site's file.
+  - path: /data/db/restore-check.sqlite
+    replica:
+      url: file:///replica/restore-check
