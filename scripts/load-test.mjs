@@ -1,6 +1,7 @@
-// Load test for SQLite with Litestream (m1-050, D-DB-13 condition 2).
-// Disposable test data only. Runs inside the load-test container
-// (docker/litestream-poc/compose.load-test.yaml), against the app on
+// Load test for SQLite with Litestream (m1-050, D-DB-13 condition 2), and for
+// MongoDB in one container (m1-051, D-DB-8). Disposable test data only. Runs
+// inside the load-test container (docker/litestream-poc/compose.load-test.yaml
+// or docker/mongodb-load-test/compose.yaml), against the app on
 // http://127.0.0.1:3000, through Apostrophe's REST API only.
 //
 //   node load-test/load-test.mjs seed
