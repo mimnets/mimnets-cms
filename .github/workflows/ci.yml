@@ -97,6 +97,9 @@ jobs:
       # SHA-256 of gitleaks_8.30.1_linux_x64.tar.gz, from the release's
       # gitleaks_8.30.1_checksums.txt (verified 2026-10-20).
       GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+      # The same file's id in the GitHub API, for the fallback download
+      # (m1-053). Change it together with the version.
+      GITLEAKS_ASSET_ID: '378332058'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -106,8 +109,13 @@ jobs:
         run: |
           set -euo pipefail
           cd "$RUNNER_TEMP"
-          curl -sSfL -o gitleaks.tar.gz \
-            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          # The release download URL has returned 504 for hours at a time
+          # (m1-052, m1-053). Retry it, then fall back to the API's download
+          # of the same file. The checksum below verifies whichever succeeds.
+          curl -sSfL --retry 3 --retry-all-errors -o gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" ||
+            curl -sSfL --retry 3 --retry-all-errors -H "Accept: application/octet-stream" -o gitleaks.tar.gz \
+              "https://api.github.com/repos/gitleaks/gitleaks/releases/assets/${GITLEAKS_ASSET_ID}"
           echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
           mkdir gitleaks-bin
           tar -xzf gitleaks.tar.gz -C gitleaks-bin gitleaks
