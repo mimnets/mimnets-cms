@@ -12,6 +12,8 @@ actually run.
 | [SEO operations](./seo.md) | §1–§4 verified locally (m1-018); launch checks not yet executed |
 | [Disposable PostgreSQL 16 on OCI (Docker), dev connection, export/import](./postgresql-dev-on-oci-docker.md) | Draft — not yet executed (m1-033); fallback, not chosen |
 | [Disposable PostgreSQL 16 on Neon (free plan), D-DB-5 test, export/import](./postgresql-dev-on-neon.md) | Draft; §2–§4 verified (m1-033, m1-034); export/import not executed |
-| [Server hardening and patching (Hetzner Cloud, self-hosted MongoDB)](./server-hardening-and-patching.md) | Draft — not yet executed (m1-039); §12 choices 1–5 and 8 decided (m1-040), 6 and 7 decided (m1-044); §6 and §7 need rewriting for one container (D-DB-10 (b)) |
+| [Server hardening and patching (Hetzner Cloud, self-hosted MongoDB)](./server-hardening-and-patching.md) | Draft — not yet executed (m1-039); §12 choices 1–5 and 8 decided (m1-040), 6 and 7 decided (m1-044); §6 and §7 rewritten for one container (m1-055) |
 | [Install and test the project on the owner's OCI server (Docker, MongoDB 8.0.x)](./project-test-on-oci-docker.md) | Draft — not yet executed (m1-042); disposable test only |
 | [The whole project in one Docker container](./docker-single-container.md) | Built and tested locally (m1-043); this build is for demo and test use only (D-DB-11). One container is also the direction for staging and production, in a version not yet built (D-DB-10 (b), m1-044) |
+| [Staging stack (one site container, nginx, certbot)](./staging-container.md) | Draft; built and run on the owner's PC only, `linux/amd64` (m1-055); see its §8 |
+| [PBM backup and restore (staging container)](./pbm-backup-and-restore.md) | Draft; backup and PITR restore run on the owner's PC only (m1-055); see its §7 |
