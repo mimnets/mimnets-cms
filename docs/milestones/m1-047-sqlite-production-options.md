@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Agent research, 2026-11-07. **Nothing was installed or run**, apart from read-only checks of the installed packages. No option here is tested on a server. **Owner's decision (2026-11-07, D-DB-13 in the [decision register](../engineering/decision-register.md)): option B, SQLite with Litestream, subject to the proof of concept in §7; Docker Compose and plain systemd both kept; both dashboard layers; the proof of concept next** (§6). That approves no install, account or spending |
+| **Status** | Agent research, 2026-11-07. **Nothing was installed or run**, apart from read-only checks of the installed packages. No option here is tested on a server. **Owner's decision (2026-11-07, D-DB-13 in the [decision register](../engineering/decision-register.md)): option B, SQLite with Litestream, subject to the proof of concept in §7; Docker Compose and plain systemd both kept; both dashboard layers; the proof of concept next** (§6). That approves no install, account or spending. **Superseded 2026-11-08:** the owner reversed D-DB-13 in m1-051; staging and production run MongoDB ([ADR-0004](../architecture/decisions/ADR-0004-mongodb-for-staging-and-production.md), accepted in m1-052). Kept as a record. |
 | **Question** | The owner asked: "can we consider to continue with sqlite with WAL on and then i think we will not depends on mongodb and docker right?" |
 | **Decides** | The database engine for staging and production (would reopen D-DB-8), and with it the backup tool (D-DB-12) and the container question (D-DB-10 (b)) |
 | **Does not decide** | The provider and region (D-DB-2, D-DB-3, D-DB-7, waiting for the DPO's answer to I1), media storage, or any install, account, server or spending |

@@ -6,7 +6,7 @@
 | **Task** | m1-050, D-DB-13 condition 2 ([handoff](./m1-050-handoff.md)) |
 | **Setup** | The m1-048 test image (`assurer-site:litestream-poc`, rebuilt in m1-049 from what is now `main` `9c40408`), under its own Compose project `assurer-load-test`, with its own volumes. Docker Desktop on the owner's Windows PC, 16 CPUs and 8 GB given to Docker; `amd64` only |
 | **Scripts** | [`scripts/load-test.mjs`](../../scripts/load-test.mjs) (seed and run), [`scripts/load-test-loop-delay.mjs`](../../scripts/load-test-loop-delay.mjs) (event-loop probe), [`docker/litestream-poc/compose.load-test.yaml`](../../docker/litestream-poc/compose.load-test.yaml). Node built-ins only; no new dependency or load tool |
-| **Result** | **FAIL** against the agreed limit. The cause is the SQLite adapter's query shape, not Litestream and not the menu. With a measurement-only adapter patch, HTTP p99 passes, but event-loop p99 and saves still fail at 8 readers |
+| **Result** | **FAIL** against the agreed limit. The cause is the SQLite adapter's query shape, not Litestream and not the menu. With a measurement-only adapter patch, HTTP p99 passes, but event-loop p99 and saves still fail at 8 readers. **Superseded 2026-11-08:** the owner reversed D-DB-13 in m1-051; staging and production run MongoDB ([ADR-0004](../architecture/decisions/ADR-0004-mongodb-for-staging-and-production.md), accepted in m1-052). Kept as a record. |
 
 All runs are **agent-executed**. They are not human approval.
 

@@ -39,3 +39,13 @@ start m1-051 in a fresh session with the prompt at the end of docs/milestones/m1
 5. The agent reported the results and asked to commit and push (D-GIT-49). The owner wrote:
 
    > please commit and push
+
+6. After the push, the owner wrote:
+
+   > please clean all image and container and stop dev server
+
+   The agent removed the m1-051 test items and stopped the server, then listed what else "all" would
+   remove (including the demo site's data). The owner chose "Everything". For the follow-up commit
+   updating the clean-up records, the owner wrote:
+
+   > i approve

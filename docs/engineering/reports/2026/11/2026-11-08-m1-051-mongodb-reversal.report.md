@@ -87,7 +87,17 @@ Sanitized JSON results are under `evidence/m1-051/` (git-ignored). No screenshot
 
 ## Clean-up
 
-Asked of the owner at the end of the session (the test container `assurer-load-test-mongo-site-1`,
-its four volumes and the image `assurer-site:load-test-mongo`). The test password lives in the
-session's scratch directory, outside the repository. The local development server started for the
-suites is stopped at the end of the session.
+The owner asked, after the push: "please clean all image and container and stop dev server", and
+then chose "Everything" when the agent listed what that would remove. Done on 2026-11-08:
+
+- The m1-051 test container `assurer-load-test-mongo-site-1`, its four volumes and the image
+  `assurer-site:load-test-mongo`.
+- The demo container `assurer-site-1` (m1-043), its four `assurer_*` volumes and its anonymous
+  volume. Its data is deleted for good.
+- Every other image on the PC: `assurer-site:local` and `-arm64`, the four `pbm-poc` images, the
+  two `litestream-poc` images, `node:24-bookworm`, `mongo:8.0.34` and `hello-world`.
+- Result: no containers, images or volumes left. Docker's build cache was not pruned.
+- The test password in the session's scratch directory is deleted. The local development server is
+  stopped.
+
+The next Docker task rebuilds from scratch and downloads the pinned base images again.

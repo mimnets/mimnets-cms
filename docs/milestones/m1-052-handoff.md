@@ -24,6 +24,9 @@
   dump task and the Litestream proof of concept stay; the staging version of the one-container image.
 - The dashboard: the Apostrophe admin layer stands; a read-only MongoDB viewer replaces Datasette,
   through the dependency gate.
+- **Docker on the owner's PC is empty** (owner, end of m1-051): no containers, images or volumes,
+  including the demo site and the PBM and Litestream proof-of-concept images. Any Docker task rebuilds
+  from scratch and downloads the pinned base images (`node:24-bookworm`, `mongo:8.0.34`) again.
 - D-DB-2, D-DB-3 and D-DB-7 still wait for the DPO's answer to I1.
 
 ## 2. Candidate tasks

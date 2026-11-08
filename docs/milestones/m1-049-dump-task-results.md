@@ -4,7 +4,7 @@
 |---|---|
 | **Task** | m1-049, D-DB-13 condition 1 ([m1-048 results §3.1](./m1-048-litestream-poc-results.md#31-apos-db-dump-stops-on-litestreams-tables)) |
 | **Date** | 2026-11-07 |
-| **Status** | Task built and tested locally (agent-executed). Upstream issue **drafted, not filed**: the owner files it and the URL is recorded here |
+| **Status** | Task built and tested locally (agent-executed). Upstream issue **drafted, not filed**: the owner files it and the URL is recorded here. **Superseded 2026-11-08:** the owner reversed D-DB-13 in m1-051; staging and production run MongoDB ([ADR-0004](../architecture/decisions/ADR-0004-mongodb-for-staging-and-production.md), accepted in m1-052). Kept as a record. **The dump task was removed in m1-052** (owner's choice); the code is in Git history at `7344c51` |
 | **Report** | [m1-049 report](../engineering/reports/2026/11/2026-11-07-m1-049-dump-task.report.md) |
 
 ## 1. Summary
