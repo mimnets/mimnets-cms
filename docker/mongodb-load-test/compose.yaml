@@ -4,7 +4,9 @@
 # image assurer-site:local) is not touched. From the repository root:
 #   export ASSURER_ADMIN_PASSWORD=...   # any test value, first start only
 #   docker compose -f docker/mongodb-load-test/compose.yaml up -d --build site
-# Guide: docs/milestones/m1-051-mongodb-load-test-results.md
+# For cluster mode, also export APOS_CLUSTER_PROCESSES=2 (m1-054).
+# Guides: docs/milestones/m1-051-mongodb-load-test-results.md and
+# docs/milestones/m1-054-cluster-mode-results.md
 name: assurer-load-test-mongo
 
 services:
@@ -19,7 +21,11 @@ services:
     environment:
       APOS_BASE_URL: http://localhost:3047
       ASSURER_ADMIN_PASSWORD: ${ASSURER_ADMIN_PASSWORD:?set a test password for the first start}
-      # Event-loop delay probe; active only in the web process.
+      # Apostrophe's cluster mode (m1-054): this many Node web processes when
+      # set, one when empty. Core option; the image sets NODE_ENV=production,
+      # which cluster mode needs.
+      APOS_CLUSTER_PROCESSES: ${APOS_CLUSTER_PROCESSES:-}
+      # Event-loop delay probe; active only in the web processes.
       NODE_OPTIONS: --import=/app/load-test/load-test-loop-delay.mjs
     volumes:
       - mongo-data:/data/db

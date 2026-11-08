@@ -3,11 +3,12 @@
 // Loaded only through NODE_OPTIONS in docker/litestream-poc/compose.load-test.yaml
 // or docker/mongodb-load-test/compose.yaml, never by the app itself. It is
 // active only in the web process (`node app` with no task), so tasks and the
-// load client stay unmeasured.
+// load client stay unmeasured. In cluster mode (APOS_CLUSTER_PROCESSES, m1-054)
+// that is the primary and each worker.
 //
 // On SIGUSR2 it writes the delay histogram since the last signal to
-// /tmp/loop-delay.json (milliseconds) and resets it. `scripts/load-test.mjs run`
-// sends the signal before and after each run.
+// /tmp/loop-delay-<pid>.json (milliseconds) and resets it.
+// `scripts/load-test.mjs run` sends the signal before and after each run.
 import { writeFileSync } from 'node:fs';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 
@@ -19,7 +20,7 @@ if (isWebProcess) {
   histogram.enable();
   const ms = (ns) => Math.round(ns / 1e5) / 10;
   process.on('SIGUSR2', () => {
-    writeFileSync('/tmp/loop-delay.json', JSON.stringify({
+    writeFileSync(`/tmp/loop-delay-${process.pid}.json`, JSON.stringify({
       samples: histogram.count,
       p50: ms(histogram.percentile(50)),
       p90: ms(histogram.percentile(90)),

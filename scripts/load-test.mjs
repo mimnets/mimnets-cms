@@ -14,7 +14,8 @@
 //     First single requests with no load, then the m1-048 P6 profile:
 //     <readers> logged-out readers over every published page, plus one draft
 //     save a second as the admin. Prints the results as JSON. Event-loop delay
-//     comes from scripts/load-test-loop-delay.mjs in the web process.
+//     comes from scripts/load-test-loop-delay.mjs in each web process (the
+//     workers in cluster mode, m1-054); the result gives the worst of them.
 //
 // Credentials: LOAD_TEST_USER (default "admin") and LOAD_TEST_PASSWORD, from
 // the environment only; never logged.
@@ -257,24 +258,51 @@ function stats(values) {
   };
 }
 
-// The web process: the one whose command line is exactly `node app`.
-function appPid() {
+// The web processes that serve requests. The one whose command line is exactly
+// `node app` serves them itself, unless it is a cluster primary
+// (APOS_CLUSTER_PROCESSES, m1-054): then its child processes, the workers, do.
+function appPids() {
+  const procs = [];
   for (const pid of readdirSync('/proc').filter(p => /^\d+$/.test(p))) {
     try {
       const cmd = readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0').filter(Boolean);
-      if (cmd.length === 2 && /node$/.test(cmd[0]) && cmd[1] === 'app') {
-        return Number(pid);
-      }
+      // The parent pid is the field after the command name, which is in brackets.
+      const ppid = Number(readFileSync(`/proc/${pid}/stat`, 'utf8').split(') ')[1].split(' ')[1]);
+      procs.push({
+        pid: Number(pid),
+        ppid,
+        cmd
+      });
     } catch (e) {
       // The process ended while listing.
     }
   }
-  throw new Error('web process not found');
+  const main = procs.find(p => p.cmd.length === 2 && /node$/.test(p.cmd[0]) && p.cmd[1] === 'app');
+  if (!main) {
+    throw new Error('web process not found');
+  }
+  const workers = procs.filter(p => p.ppid === main.pid && /node$/.test(p.cmd[0])).map(p => p.pid);
+  return workers.length ? workers : [ main.pid ];
 }
-async function loopDelay(pid) {
-  process.kill(pid, 'SIGUSR2');
+// Loop delay of each web process, and the worst of each figure over them.
+async function loopDelay(pids) {
+  for (const pid of pids) {
+    process.kill(pid, 'SIGUSR2');
+  }
   await new Promise(resolve => setTimeout(resolve, 200));
-  return JSON.parse(readFileSync('/tmp/loop-delay.json', 'utf8'));
+  const each = pids.map(pid => ({
+    pid,
+    ...JSON.parse(readFileSync(`/tmp/loop-delay-${pid}.json`, 'utf8'))
+  }));
+  const worst = (key) => Math.max(...each.map(d => d[key]));
+  return {
+    processes: each.length,
+    p50: worst('p50'),
+    p90: worst('p90'),
+    p99: worst('p99'),
+    max: worst('max'),
+    ...(each.length > 1 ? { each } : {})
+  };
 }
 
 async function timed(url) {
@@ -307,7 +335,7 @@ async function run() {
   // Before the seed (baseline), saves go to the demo home page.
   const seeded = allDrafts.filter(p => p.title.startsWith(PREFIX));
   const drafts = seeded.length ? seeded : allDrafts.filter(p => p.slug === '/');
-  const pid = appPid();
+  const pids = appPids();
 
   // Single requests, no load: five of each kind, after one warm-up.
   const deep = published.filter(p => p.title.startsWith(`${PREFIX} deep`))[0];
@@ -335,7 +363,7 @@ async function run() {
   }
 
   // Load: readers over every published page, one draft save a second.
-  await loopDelay(pid); // resets the histogram
+  await loopDelay(pids); // resets the histograms
   const end = Date.now() + duration;
   const reads = [];
   const saves = [];
@@ -372,7 +400,7 @@ async function run() {
   }, 1000);
   await Promise.all(readerLoops);
   clearInterval(timer);
-  const delay = await loopDelay(pid);
+  const delay = await loopDelay(pids);
   await Promise.all(pending);
 
   const okReads = reads.filter(r => r.status >= 200 && r.status < 400);
