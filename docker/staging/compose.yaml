@@ -1,0 +1,190 @@
+# Staging stack (m1-055): the one-container site (app, MongoDB with TLS, PBM;
+# D-DB-10 (b)), nginx in its own container as the only public entry, and
+# certbot for the certificate. The site container publishes no port. Run from
+# the repository root:
+#   ASSURER_DOMAIN=staging.example.org APOS_BASE_URL=https://staging.example.org \
+#     docker compose -f docker/staging/compose.yaml up -d --build
+# Further settings (SMTP and so on) go in docker/staging/site.env (git-ignored).
+# For arm64 on an amd64 PC, also set DOCKER_DEFAULT_PLATFORM=linux/arm64 and
+# ASSURER_TAG_SUFFIX=-arm64, and build with --profile build-only.
+# Guide: docs/runbooks/staging-container.md
+name: assurer-staging
+
+x-site-image: &site-image assurer-site:staging${ASSURER_TAG_SUFFIX:-}
+
+services:
+  # The root Dockerfile's image under its own tag, as the staging build's base.
+  base:
+    build:
+      context: ../..
+    image: assurer-site:staging-base${ASSURER_TAG_SUFFIX:-}
+    profiles: [build-only]
+    # Compose does not pass DOCKER_DEFAULT_PLATFORM on to a service used only
+    # as a build context.
+    platform: ${DOCKER_DEFAULT_PLATFORM:-}
+
+  site:
+    build:
+      context: ../..
+      dockerfile: docker/staging/Dockerfile
+      args:
+        BASE_IMAGE: staging-base
+      additional_contexts:
+        staging-base: service:base
+    image: *site-image
+    restart: unless-stopped
+    stop_grace_period: 60s
+    env_file:
+      - path: ./site.env
+        required: false
+    environment:
+      APOS_BASE_URL: ${APOS_BASE_URL:?set the public https origin, for example https://staging.example.org}
+      APOS_HTTPS: "1"
+      # Only nginx may set the X-Forwarded headers (security-configuration.md).
+      APOS_TRUST_PROXY: ${ASSURER_NGINX_IP:-172.30.55.10}
+      # Start short and raise it once HTTPS is confirmed (runbook §8 point 4).
+      APOS_HSTS_MAX_AGE: ${APOS_HSTS_MAX_AGE:-300}
+      APOS_CLUSTER_PROCESSES: ${APOS_CLUSTER_PROCESSES:-2}
+      # Size these two against the server's memory (m1-054 results §3).
+      ASSURER_MONGO_CACHE_GB: ${ASSURER_MONGO_CACHE_GB:-1}
+      ASSURER_BACKUP_INTERVAL_HOURS: ${ASSURER_BACKUP_INTERVAL_HOURS:-24}
+      ASSURER_BACKUP_RETENTION: ${ASSURER_BACKUP_RETENTION:-8d}
+    volumes:
+      - mongo-data:/data/db
+      - secrets:/data/secrets
+      - uploads:/app/public/uploads
+      - app-data:/app/data
+      - backups:/backups
+    networks:
+      - edge
+
+  # Writes a self-signed certificate valid for 30 days if there is none yet,
+  # so nginx can start before certbot has issued the real one.
+  cert-bootstrap:
+    image: *site-image
+    entrypoint: ["bash", "-c"]
+    command:
+      - >-
+        if [ ! -s /certs/current/fullchain.pem ]; then
+        mkdir -p /certs/current &&
+        (umask 077; openssl req -x509 -newkey rsa:2048 -nodes -days 30
+        -subj "/CN=$$ASSURER_DOMAIN" -addext "subjectAltName=DNS:$$ASSURER_DOMAIN"
+        -keyout /certs/current/privkey.pem -out /certs/current/fullchain.pem 2> /dev/null) &&
+        chmod 644 /certs/current/fullchain.pem &&
+        echo "[cert-bootstrap] Self-signed certificate written for $$ASSURER_DOMAIN";
+        fi
+    environment:
+      ASSURER_DOMAIN: ${ASSURER_DOMAIN:?set the site's host name}
+    volumes:
+      - certs:/certs
+    network_mode: none
+
+  nginx:
+    build:
+      context: .
+      dockerfile: nginx/Dockerfile
+    image: assurer-nginx:staging${ASSURER_TAG_SUFFIX:-}
+    restart: unless-stopped
+    init: true
+    depends_on:
+      cert-bootstrap:
+        condition: service_completed_successfully
+    ports:
+      - "${ASSURER_HTTP_BIND:-80}:80"
+      - "${ASSURER_HTTPS_BIND:-443}:443"
+    environment:
+      ASSURER_DOMAIN: ${ASSURER_DOMAIN:?set the site's host name}
+      APOS_BASE_URL: ${APOS_BASE_URL:?set the public https origin}
+      ASSURER_MAX_BODY: ${ASSURER_MAX_BODY:-32m}
+      ASSURER_RATE_LIMIT: ${ASSURER_RATE_LIMIT:-30r/s}
+      ASSURER_RATE_BURST: ${ASSURER_RATE_BURST:-60}
+    volumes:
+      - certs:/etc/nginx/certs:ro
+      - acme-webroot:/var/www/acme:ro
+    networks:
+      edge:
+        ipv4_address: ${ASSURER_NGINX_IP:-172.30.55.10}
+
+  # Renews the certificate twice a day when it is due. The first certificate is
+  # requested by hand (docs/runbooks/staging-container.md).
+  certbot:
+    build:
+      context: .
+      dockerfile: certbot/Dockerfile
+    image: assurer-certbot:staging${ASSURER_TAG_SUFFIX:-}
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        trap exit TERM;
+        while :; do
+        certbot renew --webroot -w /var/www/acme --quiet;
+        sleep 12h & wait $$!;
+        done
+    volumes:
+      - certs:/etc/letsencrypt
+      - acme-webroot:/var/www/acme
+
+  # Restore drill (docs/runbooks/pbm-backup-and-restore.md). Copies what a
+  # rebuild would get back from elsewhere: the secrets, the media and the
+  # backups. The restore container gets its own copy, never write access to
+  # the site's backups.
+  restore-copy:
+    image: *site-image
+    profiles: [restore]
+    entrypoint: ["bash", "-c"]
+    command:
+      - >-
+        cp -a /from/secrets/. /data/secrets/ &&
+        rm -f /data/secrets/.database-ready /data/secrets/.pbm-configured &&
+        cp -a /from/uploads/. /app/public/uploads/ &&
+        cp -a /from/backups/. /backups/
+    volumes:
+      - secrets:/from/secrets:ro
+      - uploads:/from/uploads:ro
+      - backups:/from/backups:ro
+      - restore-secrets:/data/secrets
+      - restore-uploads:/app/public/uploads
+      - restore-backups:/backups
+    network_mode: none
+
+  # Starts empty, in restore mode. After `pbmc restore`, recreate it with
+  # ASSURER_RESTORE_MODE=site to run the migrations and the app, over plain
+  # HTTP on this host's loopback only.
+  restore:
+    image: *site-image
+    profiles: [restore]
+    stop_grace_period: 60s
+    ports:
+      - "127.0.0.1:${ASSURER_RESTORE_PORT:-3044}:3000"
+    environment:
+      ASSURER_MODE: ${ASSURER_RESTORE_MODE:-restore}
+      APOS_BASE_URL: http://localhost:${ASSURER_RESTORE_PORT:-3044}
+      APOS_CLUSTER_PROCESSES: "1"
+      ASSURER_BACKUP_INTERVAL_HOURS: "0"
+    volumes:
+      - restore-mongo-data:/data/db
+      - restore-secrets:/data/secrets
+      - restore-uploads:/app/public/uploads
+      - restore-app-data:/app/data
+      - restore-backups:/backups
+
+networks:
+  edge:
+    ipam:
+      config:
+        - subnet: ${ASSURER_EDGE_SUBNET:-172.30.55.0/24}
+
+volumes:
+  mongo-data:
+  secrets:
+  uploads:
+  app-data:
+  backups:
+  certs:
+  acme-webroot:
+  restore-mongo-data:
+  restore-secrets:
+  restore-uploads:
+  restore-app-data:
+  restore-backups:

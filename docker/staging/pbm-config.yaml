@@ -1,0 +1,15 @@
+# PBM configuration for staging (m1-055). Backups go to the container's
+# /backups volume only, on the same server: not an off-site backup. The S3
+# storage waits for its tests (D-DB-12). No storage credentials here.
+# Guide: docs/runbooks/pbm-backup-and-restore.md
+storage:
+  type: filesystem
+  filesystem:
+    path: /backups
+pitr:
+  enabled: true
+  # 5-minute slices, so the RPO of 15 minutes (D-DB-4) holds while a base
+  # backup runs for up to about 10 minutes (m1-046 results §3.3).
+  oplogSpanMin: 5
+backup:
+  compression: s2

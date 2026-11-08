@@ -1,0 +1,73 @@
+# Staging HTTPS proxy (m1-055, hardening runbook §8). The official image fills
+# in ${ASSURER_DOMAIN}, ${APOS_BASE_URL}, ${ASSURER_MAX_BODY},
+# ${ASSURER_RATE_LIMIT} and ${ASSURER_RATE_BURST} from the environment at
+# start. nginx's own variables ($host and so on) stay as they are.
+
+server_tokens off;
+
+# Per client address. Floods get 429; the app's own form limit is per client
+# and does not stop floods (runbook §8 point 3).
+limit_req_zone $binary_remote_addr zone=assurer_req:10m rate=${ASSURER_RATE_LIMIT};
+limit_req_status 429;
+
+# Docker's DNS, read again every 10 s, so a recreated site container is found.
+resolver 127.0.0.11 valid=10s ipv6=off;
+
+# HTTP: certificate challenges, and a redirect to HTTPS for everything else.
+server {
+  listen 80;
+  server_name ${ASSURER_DOMAIN};
+
+  location /.well-known/acme-challenge/ {
+    root /var/www/acme;
+  }
+
+  location / {
+    return 301 ${APOS_BASE_URL}$request_uri;
+  }
+}
+
+# Any other host name: close the connection.
+server {
+  listen 80 default_server;
+  return 444;
+}
+
+server {
+  listen 443 ssl default_server;
+  ssl_reject_handshake on;
+}
+
+server {
+  listen 443 ssl;
+  http2 on;
+  server_name ${ASSURER_DOMAIN};
+
+  # certbot's deploy hook copies each new certificate here; until the first
+  # one, a short-lived self-signed certificate (cert-bootstrap in compose).
+  ssl_certificate /etc/nginx/certs/current/fullchain.pem;
+  ssl_certificate_key /etc/nginx/certs/current/privkey.pem;
+  ssl_protocols TLSv1.2 TLSv1.3;
+  ssl_session_cache shared:assurer_tls:10m;
+  ssl_session_timeout 1d;
+  ssl_session_tickets off;
+
+  # Apostrophe sets no limit of its own on uploads (m1-055 report).
+  client_max_body_size ${ASSURER_MAX_BODY};
+
+  location / {
+    limit_req zone=assurer_req burst=${ASSURER_RATE_BURST} nodelay;
+
+    set $assurer_site http://site:3000;
+    proxy_pass $assurer_site;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    # nginx is the first hop, so it replaces anything the client sent. The app
+    # trusts these headers from this container's address only.
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_read_timeout 120s;
+    proxy_send_timeout 120s;
+  }
+}
