@@ -24,13 +24,23 @@ PR #55's `secrets` job (run #89) failed in its install step with `curl: (22) The
 returned error: 504`. GitHub's release download answered 504 for
 `gitleaks_8.30.1_linux_x64.tar.gz`; the agent got 504 four times from this PC as well, while the
 release page answered 200. The workflow, the pin and the checksum were not the cause. The owner
-re-ran the job; `secrets` is `success` on `363de89`. A `curl --retry` in `ci.yml` would absorb such
-outages; it is not part of this task (see the handoff).
+re-ran the job; `secrets` is `success` on `363de89`.
+
+The same failure hit the m1-053 PR. `github.com/…/releases/download/` answered 504 for every release
+tried (another project's too) while githubstatus.com said "All Systems Operational"; the API's
+download of the same file worked and matched the pinned SHA-256. Owner's choice: "Fallback, commit +
+push". `ci.yml` now retries the release URL 3 times, then downloads the same file through
+`api.github.com/repos/gitleaks/gitleaks/releases/assets/<id>` (new env `GITLEAKS_ASSET_ID`,
+`378332058`). The checksum check is unchanged and verifies whichever download succeeded. No token,
+secret, tool or dependency added. Tested locally: the workflow file parses; the step run in bash
+failed on the release URL 4 times, took the fallback, printed `gitleaks.tar.gz: OK` and unpacked the
+binary.
 
 ## Change
 
 | File | Change |
 |---|---|
+| `.github/workflows/ci.yml` | `secrets` job: retry plus the API fallback for the gitleaks download (above) |
 | `modules/@apostrophecms/page/index.js` | The `ancestors` builder's `children` query (the two-level menu) gets a projection: `title`, `path`, `aposDocId`, `_url`. Core adds the fields `_url` needs, plus `type` and `metaType`. Comment explains that a template needing more of a menu item must add the field there |
 
 Why there: the menu reads `home._children`, which core loads with the `ancestors` builders, both on
@@ -106,5 +116,5 @@ database. The disposable benchmark copy was deleted.
 - A MongoDB measurement of the change (Docker images to download again).
 - Cluster mode on the MongoDB load test; the staging image with PBM; the hardening runbook §6 and §7
   rewrite; the PBM S3 tests.
-- A `curl --retry` for the gitleaks download in `ci.yml` (not asked for; a CI change).
+- The CI fallback is proven locally only, until the PR's `secrets` job runs.
 - The upstream db-connect issue URL (m1-050 results §5, D-DB-13).

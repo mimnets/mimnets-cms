@@ -15,8 +15,8 @@
   (`modules/@apostrophecms/page/index.js`). A template that reads more of a menu item must add the
   field there. Output identical; menu data about half at the m1-050 size; no measurable time change
   on local SQLite; not measured on MongoDB.
-- **CI:** the gitleaks download in the `secrets` job fails when GitHub's release download answers
-  5xx (PR #55, 504). A re-run fixed it.
+- **CI:** the gitleaks download now retries and falls back to the API download of the same file
+  (m1-053). `GITLEAKS_ASSET_ID` must change together with `GITLEAKS_VERSION`.
 - Everything in the [m1-053 handoff](m1-053-handoff.md) §1 still applies: ADR-0004 accepted,
   MongoDB 8.0.x in one container with PBM, saves fail at 8 readers on MongoDB (single Node process),
   Docker on the owner's PC is empty, the db-connect issue URL is not recorded, D-DB-2, D-DB-3 and
@@ -31,8 +31,6 @@
 2. **Staging image** for one container with MongoDB and PBM: TLS, member authentication, no demo
    seed or default password, nginx placement. Includes a PBM runbook and the hardening runbook §6
    and §7 rewrite.
-3. **CI download retry**: `curl --retry 5 --retry-all-errors` for the gitleaks download in
-   `.github/workflows/ci.yml`. Small; no new dependency.
 
 ## 3. Gates
 

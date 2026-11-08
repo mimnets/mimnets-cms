@@ -36,3 +36,7 @@ and m1 052 ci / secrets pull request has failed - Error: Process completed with 
 4. The agent reported the results and asked the owner to decide D-GIT-51 (commit and push). The owner wrote:
 
    > commit and push all
+
+5. After the push, the owner pasted the same `secrets` failure (`curl: (22) … 504`) from the m1-053 PR.
+   The agent found the release download path down and the API download working, and asked how to
+   handle it. The owner chose "Fallback, commit + push".
