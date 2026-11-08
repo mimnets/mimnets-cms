@@ -1,0 +1,15 @@
+# Load test (m1-050, D-DB-13 condition 2), on top of the Litestream proof of
+# concept. Disposable: run it under its own project name, so it gets its own
+# volumes. From the repository root:
+#   export ASSURER_ADMIN_PASSWORD=...   # first start only
+#   docker compose -f docker/litestream-poc/compose.yaml -f docker/litestream-poc/compose.load-test.yaml \
+#     -p assurer-load-test up -d --no-build site
+# Guide: docs/milestones/m1-050-load-test-results.md
+services:
+  site:
+    environment:
+      # Event-loop delay probe; active only in the web process.
+      NODE_OPTIONS: --import=/app/load-test/load-test-loop-delay.mjs
+    volumes:
+      - ../../scripts/load-test.mjs:/app/load-test/load-test.mjs:ro
+      - ../../scripts/load-test-loop-delay.mjs:/app/load-test/load-test-loop-delay.mjs:ro
