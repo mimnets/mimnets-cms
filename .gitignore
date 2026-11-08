@@ -1,4 +1,6 @@
 .env
+# Staging settings (m1-055).
+/docker/staging/site.env
 /locales
 npm-debug.log
 /data

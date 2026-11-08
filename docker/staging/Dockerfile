@@ -1,0 +1,48 @@
+# Staging image (m1-055): the one-container image (app and MongoDB 8.0,
+# D-DB-10 (b)) with Percona Backup for MongoDB, MongoDB TLS, no demo content
+# and no default password. Built from the root Dockerfile's image (BASE_IMAGE),
+# whose demo entrypoint it removes. linux/amd64 and linux/arm64 only, the
+# platforms of mongo:8.0.34. Build it with docker/staging/compose.yaml.
+# Guide: docs/runbooks/staging-container.md
+ARG BASE_IMAGE=assurer-site:staging-base
+
+# The download stage uses the build image the main Dockerfile already pins,
+# because the final image has no curl.
+FROM node:24-bookworm@sha256:8fa96264f302f58bbb13aa7339c541547b56975766ce956c875da149452a3e40 AS pbm-download
+# PBM 2.17.0 from Percona's noble repository, pinned by file and SHA-256
+# (the same package as the m1-046 proof of concept). Three high findings in
+# its Go libraries are accepted until a fixed release (D-SEC-5).
+ARG TARGETARCH
+ARG PBM_VERSION=2.17.0-1.noble
+ARG PBM_SHA256_amd64=3964c28daed342959863c8b228f0098023ce2058787e8926505fd81e4770ed31
+ARG PBM_SHA256_arm64=a5e25085694c0405c9b230fb6ee5b368fafdc0c8b906f2f9842e872df5379047
+RUN set -eux; \
+    case "$TARGETARCH" in \
+      amd64) sha="$PBM_SHA256_amd64" ;; \
+      arm64) sha="$PBM_SHA256_arm64" ;; \
+      *) echo "unsupported architecture $TARGETARCH"; exit 1 ;; \
+    esac; \
+    curl -fsSLo /tmp/pbm.deb \
+      "https://repo.percona.com/pbm/apt/pool/main/p/percona-backup-mongodb/percona-backup-mongodb_${PBM_VERSION}_${TARGETARCH}.deb"; \
+    echo "$sha  /tmp/pbm.deb" | sha256sum -c -
+
+FROM ${BASE_IMAGE}
+COPY --from=pbm-download /tmp/pbm.deb /tmp/pbm.deb
+RUN dpkg -i /tmp/pbm.deb && rm /tmp/pbm.deb && pbm version
+
+# pbm-agent runs as its own OS user, so the app's user cannot read its
+# credentials.
+RUN useradd --system --uid 1002 --no-create-home --shell /usr/sbin/nologin pbm \
+  && mkdir -p /backups && chown pbm:pbm /backups && chmod 700 /backups \
+  && rm /usr/local/bin/assurer-entrypoint /etc/assurer/mongod.conf
+COPY docker/staging/mongod.conf /etc/assurer/mongod.conf
+COPY docker/staging/pbm-config.yaml /etc/assurer/pbm-config.yaml
+COPY --chmod=755 docker/staging/entrypoint.sh /usr/local/bin/assurer-staging-entrypoint
+COPY --chmod=755 docker/staging/pbmc.sh /usr/local/bin/pbmc
+
+# No demonstration notice (lib/demo-site.js). Two web processes (m1-054).
+ENV APOS_DEMO_SITE=0 \
+    APOS_CLUSTER_PROCESSES=2
+
+VOLUME ["/backups"]
+ENTRYPOINT ["assurer-staging-entrypoint"]

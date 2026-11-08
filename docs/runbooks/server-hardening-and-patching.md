@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| **Status** | **Draft, not yet executed** (`m1-039`, 2026-11-04). No server, account or bucket exists. Nothing in this runbook approves an account, spending, a tool install or a provider choice. §12 choices 1–5 and 8 answered by the owner (`m1-040`, 2026-11-04); 6 and 7 answered by the owner (`m1-044`, 2026-11-06). **The app-and-MongoDB parts (§6, §7) still describe packages and systemd. The owner has since chosen one container (D-DB-10 (b), `m1-044`), so they need rewriting before use** |
+| **Status** | **Draft, not yet executed** (`m1-039`, 2026-11-04). No server, account or bucket exists. Nothing in this runbook approves an account, spending, a tool install or a provider choice. §12 choices 1–5 and 8 answered by the owner (`m1-040`, 2026-11-04); 6 and 7 answered by the owner (`m1-044`, 2026-11-06). **§6 and §7 rewritten for one container (D-DB-10 (b)) in `m1-055`**, with nginx and certbot in their own containers (§8); the staging images were built and run on the owner's PC only ([staging container runbook](./staging-container.md)) |
 | **Task** | [m1-039 report](../engineering/reports/2026/11/2026-11-04-m1-039-hardening-runbook.report.md) · [m1-040 report](../engineering/reports/2026/11/2026-11-04-m1-040-hardening-choices.report.md) (§12 answers) · [m1-044 report](../engineering/reports/2026/11/2026-11-06-m1-044-mongodb-decisions.report.md) (§12 choices 6 and 7, D-DB-10 (b)) |
 | **Applies to** | The owner's preferred stack ([hosting options paper](../milestones/m1-031-hosting-options.md) §10): one Hetzner Cloud server per site in Singapore, Ubuntu LTS, MongoDB Community Server (D-DB-8), the Node app under systemd behind a TLS proxy, media on the server disk with a nightly copy to a versioned EU bucket |
-| **Waits for** | D-DB-2, D-DB-3 and D-DB-7 (DPO input I1). The rewrite for one container (D-DB-10 (b)) |
+| **Waits for** | D-DB-2, D-DB-3 and D-DB-7 (DPO input I1) |
 | **Related** | [ADR-0002](../architecture/decisions/ADR-0002-database-strategy.md) · [deployment principles](./deployment-principles.md) · [HTTP security and HTTPS proxy](./security-configuration.md) · [backup protection plan](./backup-protection-plan.md) · [backup and restore](./database-backup-and-restore.md) · D-DB-4 · D-DB-8 |
 | **Facts as of** | 2026-11-04, from vendor documentation (sources in §13). Re-check versions before use |
 
@@ -18,12 +18,12 @@ credentials. Never copy one site's database into another.
 
 | Component | Listens on | Reachable from |
 |---|---|---|
-| TLS proxy (nginx, §12 choice 3) | `0.0.0.0:80`, `0.0.0.0:443` (and IPv6) | the internet |
+| TLS proxy (nginx container, §12 choice 3, §8) | `0.0.0.0:80`, `0.0.0.0:443` (and IPv6) | the internet |
 | SSH | `22` | admin addresses only (§3) |
-| Node app (`npm run serve`) | `127.0.0.1:3000` (project default `ADDRESS`) | the proxy only |
-| `mongod` | `127.0.0.1:27017` | the app and backup tool on the same server |
-| Media | `/srv/assurer/<site>/uploads` on the encrypted data area (§5) | the app; nightly copy to the EU bucket |
-| Backup tool | outbound only | sends to the backup target (§9) |
+| Node app, in the site container (§7) | port `3000` on the Compose network only; no host port | the nginx container only |
+| `mongod`, in the site container (§6) | `127.0.0.1:27017` inside the container | the app and `pbm-agent` in the same container |
+| Media | the `uploads` Docker volume, on the encrypted data area (§5, §7) | the app; nightly copy to the EU bucket |
+| Backup tool (PBM, in the site container) | outbound only, once the S3 storage is approved | sends to the backup target (§9) |
 
 If MongoDB ever moves to its own server, bind it to the **private network address** as well, and
 add the host firewall rule in §3. The Hetzner Cloud Firewall does not filter private networks.
@@ -124,103 +124,94 @@ store, never on the server.
 advance, because the RTO (D-DB-4, ≤ 4 h) allows a manual unlock and the OS stays reachable for
 patching. The LUKS setup is still untested; the first staging task tries it.
 
-## 6. MongoDB
+## 6. MongoDB (inside the site container)
 
-Install from MongoDB's official apt repository (tool approval needed). Decided (§12 choice 6,
-m1-044): **MongoDB 8.0.x**, at 8.0.34 or newer. Under D-DB-10 (b), MongoDB runs in the one container
-instead of from apt; this section needs rewriting for that. The security settings below still
-apply.
+> **Rewritten for one container in `m1-055`** (D-DB-10 (b)). MongoDB is not installed from apt: it
+> runs in the staging site container, built from the [staging container runbook](./staging-container.md).
+> Decided (§12 choice 6, m1-044): **MongoDB 8.0.x**, at 8.0.34 or newer, from the pinned
+> `mongo:8.0.34` base image.
 
-`/etc/mongod.conf` (outline; verify every key against the chosen version's reference):
+The settings are in [`docker/staging/mongod.conf`](../../docker/staging/mongod.conf). What they do,
+and where each one comes from:
 
-```yaml
-storage:
-  dbPath: /srv/mongodb            # on the encrypted XFS data area (§5)
-net:
-  port: 27017
-  bindIp: 127.0.0.1               # add the private address only for a separate DB server
-  tls:
-    mode: requireTLS
-    certificateKeyFile: /etc/mongodb/tls/server.pem
-    CAFile: /etc/mongodb/tls/ca.pem
-security:
-  authorization: enabled
-  keyFile: /etc/mongodb/keyfile   # staging only; x.509 member authentication on production (§12 choice 2)
-  javascriptEnabled: false        # decided, §12 choice 7 (m1-044)
-replication:
-  replSetName: rs0                # one member; needed for PITR (D-DB-4)
-```
+| Setting | Value | Why |
+|---|---|---|
+| `net.bindIp` | `127.0.0.1` | Only processes in the container reach MongoDB. Compose publishes no MongoDB port, and the site container publishes none at all (§1) |
+| `net.tls.mode` | `requireTLS`, with a private CA | Hardening checklist [6]; decided in m1-055 for loopback too. Clients that do not use TLS are refused |
+| `net.tls.allowConnectionsWithoutCertificates` | `true` | Clients log in with a password (SCRAM); no client certificates |
+| `security.authorization` | `enabled` | Every client logs in [6] |
+| `security.keyFile`, `clusterAuthMode: keyFile` | random key file | Member authentication: a key file is acceptable on staging; **production needs x.509** (§12 choice 2) |
+| `security.javascriptEnabled` | `false` | §12 choice 7 (m1-044) |
+| `replication.replSetName` | `rs0`, one member | Needed for point-in-time recovery (D-DB-4) |
+| WiredTiger cache | `ASSURER_MONGO_CACHE_GB`, default 1 GB | The app shares the container's memory (m1-054 results §3) |
 
-Steps, from MongoDB's replica set tutorial [8] and security checklist [6]:
+What the entrypoint ([`docker/staging/entrypoint.sh`](../../docker/staging/entrypoint.sh)) does on
+the first start, following MongoDB's replica set tutorial [8] and security checklist [6]:
 
-1. Create the key file with `openssl rand -base64 756`, owner `mongodb`, mode `400`. MongoDB says
-   key files are for test and development and recommends x.509 for production [8]. Decided
-   (§12 choice 2): **x.509 on production; a key file is acceptable on staging**.
-2. Create a private CA and a server certificate for TLS. Keep the CA key off the server.
-3. Start `mongod`, connect through `127.0.0.1` (the localhost exception), run `rs.initiate()`
-   with one member, then **at once** create the user administrator. The localhost exception
-   closes once the first user exists.
-4. Create one user per purpose, least privilege [6]:
+1. Creates the random secrets in the `secrets` volume: the key file, the database user passwords
+   and the session secret. Directory mode `0711`, files `0600` or `0400`, owner `root` (the key file
+   and the server certificate are owned by `mongodb`).
+2. Creates a private CA and a server certificate for `127.0.0.1` and `localhost`, and **deletes the
+   CA key** once the certificate is signed, so nothing on the server can sign another one. When the
+   server certificate has less than 30 days left (it lasts 825 days), the next start makes a new CA
+   and certificate; a regular image update restarts the container well before that.
+3. Starts `mongod`, runs `rs.initiate()` with one member, and at once creates the user administrator
+   through the localhost exception, which closes once that user exists.
+4. Creates one user per purpose, least privilege [6]:
 
    | User | Roles | Used by |
    |---|---|---|
-   | `siteAdmin` (break-glass) | `userAdminAnyDatabase`, `clusterAdmin` | admins, by hand only |
-   | `assurerApp` | `readWrite` on the site database only | the app |
-   | `assurerBackup` | `backup` (and `restore` only on the restore target) | the backup tool. **m1-045:** PBM (D-DB-12) needs far more, including `anyAction`; see the [options paper](../milestones/m1-045-backup-tool-options.md#41-conflict-the-pbm-user-is-far-more-powerful-than-the-runbook-planned) |
+   | `siteAdmin` (break-glass) | `userAdminAnyDatabase`, `clusterAdmin` | the entrypoint, and admins by hand |
+   | `assurerApp` | `readWrite` on the `assurer` database only | the app |
+   | `pbm` | `backup`, `restore`, `clusterMonitor`, `readWrite` on `admin`, and `pbmAnyAction` (`anyAction`) | `pbm-agent` and the backup schedule. Far more than the `backup` role first planned; accepted by the owner (D-DB-12) |
 
-   Optionally limit each user to `127.0.0.1` with `authenticationRestrictions` [6].
-5. App connection string in the app's environment file (§7), never in Git:
-   `APOS_DB_URI=mongodb://assurerApp:<secret>@127.0.0.1:27017/<site-db>?replicaSet=rs0&tls=true&authSource=<site-db>`
-   (plus the CA file option for the driver). Verify the exact form in the local MongoDB task.
-6. Log rotation: `systemLog.logRotate: reopen` with a `logrotate` rule, or the default rename.
+5. Builds the app's connection string from the secrets at each start, in the app's environment only:
+   `mongodb://assurerApp:<secret>@127.0.0.1:27017/assurer?replicaSet=rs0&authSource=assurer&tls=true&tlsCAFile=/data/secrets/tls/ca.pem`.
+   It is never written to a file, a log or Git.
 
-Ongoing [6]: watch MongoDB's security alerts and end-of-life dates, apply patch releases,
-review network rules, rotate database user passwords.
+MongoDB writes its log to the container's standard output, which Docker keeps. Set a size cap for
+the json-file log driver in `/etc/docker/daemon.json` (`"log-opts": {"max-size": "50m", "max-file": "5"}`).
 
-## 7. The app under systemd
+Ongoing [6]: watch MongoDB's security alerts and end-of-life dates, update the pinned base image for
+patch releases (§10), review the network rules, and rotate the database user passwords (staging
+container runbook §6).
 
-> **Replaced in direction by D-DB-10 (b), m1-044:** the app runs in the one container, not under
-> systemd. This section stays as it was until the rewrite, and must not be followed as written.
+## 7. The containers (Docker Compose)
 
-Per the [deployment principles](./deployment-principles.md): releases are replaceable code;
-`data/`, uploads and `.env` live outside the release; build, migrate, then switch.
+> **Rewritten for one container in `m1-055`** (D-DB-10 (b)); the systemd unit that was here is gone.
+> The steps are in the [staging container runbook](./staging-container.md).
 
-`/etc/systemd/system/assurer.service` (outline):
+1. **Docker Engine** from Docker's official apt repository, with the Compose plugin. Installing it
+   on the server is a tool approval. Put Docker's data directory (`"data-root"` in
+   `/etc/docker/daemon.json`) on the encrypted data volume (§5, option B), so the volumes holding
+   the database, media, secrets and local backups are encrypted at rest.
+2. **Three long-running containers** from [`docker/staging/compose.yaml`](../../docker/staging/compose.yaml):
 
-```ini
-[Unit]
-Description=Assurer World website
-After=network-online.target mongod.service
-Wants=network-online.target
+   | Container | Holds | Ports on the host |
+   |---|---|---|
+   | `site` | the Apostrophe app (2 web processes by default, `APOS_CLUSTER_PROCESSES`), MongoDB, `pbm-agent` and the base-backup schedule | none |
+   | `nginx` | the TLS proxy (§8) | `80`, `443` |
+   | `certbot` | certificate renewal, twice a day when due | none |
 
-[Service]
-User=assurer
-Group=assurer
-WorkingDirectory=/srv/assurer/<site>/current
-EnvironmentFile=/etc/assurer/<site>.env
-Environment=NODE_ENV=production
-ExecStart=/usr/bin/node app
-Restart=always
-RestartSec=2
-NoNewPrivileges=yes
-PrivateTmp=yes
-ProtectSystem=strict
-ProtectHome=yes
-ReadWritePaths=/srv/assurer/<site>/uploads /srv/assurer/<site>/data
-
-[Install]
-WantedBy=multi-user.target
-```
-
-- `Restart=always` meets R6 (options paper §2): systemd restarts the app after any exit [9].
-- `/etc/assurer/<site>.env`: owner `root`, group `assurer`, mode `0640`. It holds
-  `APOS_DB_URI`, `APOS_SESSION_SECRET`, `APOS_RELEASE_ID` and the settings in
-  [security-configuration.md](./security-configuration.md) (`APOS_HTTPS=1`,
-  `APOS_TRUST_PROXY=loopback`, `APOS_HSTS_MAX_AGE`), SMTP and `APOS_BASE_URL`.
-  `APOS_ALLOW_INDEXING=1` on production only; `APOS_DEMO_SITE` unset on both.
-- Node.js 24 (the `engines` field), from an approved source (tool approval).
-- Check that `ProtectSystem=strict` leaves every path the app writes to in `ReadWritePaths`
-  (uploads, local data, any build cache), and adjust it in the first staging task.
+   A one-off `cert-bootstrap` container writes a short-lived self-signed certificate before the
+   first real one exists.
+3. **Restart:** `restart: unless-stopped` on all three. Inside the site container, Apostrophe's
+   primary process restarts a web process that exits; the container stops if the primary or
+   `mongod` stops, and Docker starts it again (R6, options paper §2). `pbm-agent` is restarted by
+   the entrypoint without stopping the site.
+4. **Users inside the site container:** the app runs as `assurer`, MongoDB as `mongodb`, `pbm-agent`
+   as `pbm`. Only `root` reads the secrets; the app and `pbm-agent` get their credentials in their
+   own environment only.
+5. **Settings:** `APOS_BASE_URL` and `ASSURER_DOMAIN` in the shell or Compose's `.env` file next to
+   `compose.yaml`; everything else that is per site (SMTP, form notification addresses) in
+   `docker/staging/site.env`, owner `root`, mode `0600`, never in Git. The Compose file already sets
+   `APOS_HTTPS=1`, `APOS_TRUST_PROXY` (nginx's fixed address) and `APOS_HSTS_MAX_AGE=300`
+   ([security-configuration.md](./security-configuration.md)). `APOS_DEMO_SITE` is `0` in the
+   image. `APOS_ALLOW_INDEXING=1` on production only.
+6. **Releases:** build the images from a tagged commit, then `docker compose up -d`. Compose
+   recreates only the containers whose image changed. The entrypoint runs the migrations before the
+   app starts ([deployment principles](./deployment-principles.md)). Take a PBM base backup first
+   ([PBM runbook](./pbm-backup-and-restore.md) §2).
 
 ## 8. TLS proxy
 
@@ -236,6 +227,16 @@ which is a separate tool approval with the license and advisory check. The proxy
    limit is per client and does not stop floods).
 4. Start HSTS short (`APOS_HSTS_MAX_AGE=300`) and raise it once confirmed.
 
+**m1-055:** nginx 1.30.6 and certbot 5.9.0 run in their own containers, from the official images
+with digests pinned (approved by the owner in m1-055). The configuration is
+[`docker/staging/nginx/assurer.conf.template`](../../docker/staging/nginx/assurer.conf.template):
+point 1 by the port 80 redirect, TLS 1.2 and 1.3, certbot's webroot renewal and a reload every
+6 hours; point 2 by proxying to the site container on the Compose network, with `APOS_TRUST_PROXY`
+set to nginx's fixed address only; point 3 by `client_max_body_size 32m` (Apostrophe sets no upload
+limit of its own) and `limit_req` at 30 requests a second per address with a burst of 60, both
+adjustable. Requests for any other host name are refused. First certificate and checks:
+[staging container runbook](./staging-container.md) §3.
+
 ## 9. Backups and media copy
 
 - **Database:** a continuous backup tool against the one-member replica set, for 7-day PITR and a
@@ -243,6 +244,9 @@ which is a separate tool approval with the license and advisory check. The proxy
   concept (D-DB-12, m1-045; [options paper](../milestones/m1-045-backup-tool-options.md)).** No install
   is approved. The backup account (`assurerBackup`) and the target's
   credentials are separate from the app's (backup protection plan §2).
+  **m1-055:** PBM 2.17.0 is in the staging image, with a daily base backup and 8 days kept, to a
+  local volume until the S3 storage is approved: [PBM runbook](./pbm-backup-and-restore.md). The
+  backup account is `pbm`, not `assurerBackup` (§6).
 - **Portable exports:** encrypted `apos-db-dump` at each release and monthly, 12 kept (D-DB-4),
   per the [backup and restore runbook](./database-backup-and-restore.md).
 - **Hetzner Backups** (daily server images) are crash-consistent. They are a server rebuild aid,
@@ -272,16 +276,16 @@ All rows are **NOT EXECUTED**: no server exists.
 | # | Check | How | Status |
 |---|---|---|---|
 | V1 | Only 22, 80, 443 reachable from outside | connect attempts from an outside machine to 22 (non-admin address), 3000, 27017 | NOT EXECUTED |
-| V2 | `mongod` and the app bound to loopback | `sudo ss -tlnp` | NOT EXECUTED |
+| V2 | Only nginx publishes host ports; `mongod` on loopback in its container | `sudo ss -tlnp` shows only 22, 80, 443; `docker compose ps` shows no port for `site` | NOT EXECUTED |
 | V3 | Host firewall active | `sudo ufw status verbose` | NOT EXECUTED |
 | V4 | SSH: no root, no passwords | `ssh root@<host>` and a password login both refused | NOT EXECUTED |
 | V5 | MongoDB refuses unauthenticated and non-TLS clients | `mongosh` without credentials, and without TLS | NOT EXECUTED |
 | V6 | App user cannot read other databases or manage users | `mongosh` as `assurerApp` | NOT EXECUTED |
 | V7 | Data area encrypted | `lsblk -f` shows `crypto_LUKS` under the data mount (option A or B) | NOT EXECUTED |
 | V8 | Automatic security updates on | `apt-config dump APT::Periodic::Unattended-Upgrade` returns `"1"` | NOT EXECUTED |
-| V9 | App restarts after a crash | `sudo systemctl kill -s KILL assurer`; the site answers again within seconds | NOT EXECUTED |
+| V9 | App restarts after a crash | kill one web process (`docker compose exec site pkill -KILL -f 'node /app/app'`), then the whole container (`docker kill site`); the site answers again | NOT EXECUTED |
 | V10 | HTTPS, redirect and headers | `curl -sI http://<host>/` redirects; `curl -sI https://<host>/` shows the headers in security-configuration.md | NOT EXECUTED |
-| V11 | Secrets file permissions | `stat /etc/assurer/<site>.env` shows `0640 root:assurer` | NOT EXECUTED |
+| V11 | Secrets permissions | `docker compose exec site ls -la /data/secrets` shows `0711` on the directory and no file the `assurer` user can read except `tls/ca.pem`; `stat docker/staging/site.env` shows `0600 root` | NOT EXECUTED |
 | V12 | Backup and restore | first restore drill into an isolated target (D-DB-4) | NOT EXECUTED |
 
 ## 12. Open choices (owner, with ops)
