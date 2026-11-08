@@ -1,0 +1,36 @@
+# Load test of the one-container image with MongoDB (m1-051, D-DB-8), with the
+# same script and profile as the SQLite run in m1-050. Disposable: its own
+# project name, image tag and volumes, so the demo site (project "assurer",
+# image assurer-site:local) is not touched. From the repository root:
+#   export ASSURER_ADMIN_PASSWORD=...   # any test value, first start only
+#   docker compose -f docker/mongodb-load-test/compose.yaml up -d --build site
+# Guide: docs/milestones/m1-051-mongodb-load-test-results.md
+name: assurer-load-test-mongo
+
+services:
+  site:
+    # The unchanged root Dockerfile (app and MongoDB 8.0 in one container).
+    build:
+      context: ../..
+    image: assurer-site:load-test-mongo
+    stop_grace_period: 60s
+    ports:
+      - "127.0.0.1:3047:3000" # This PC only. MongoDB is not published at all.
+    environment:
+      APOS_BASE_URL: http://localhost:3047
+      ASSURER_ADMIN_PASSWORD: ${ASSURER_ADMIN_PASSWORD:?set a test password for the first start}
+      # Event-loop delay probe; active only in the web process.
+      NODE_OPTIONS: --import=/app/load-test/load-test-loop-delay.mjs
+    volumes:
+      - mongo-data:/data/db
+      - secrets:/data/secrets
+      - uploads:/app/public/uploads
+      - app-data:/app/data
+      - ../../scripts/load-test.mjs:/app/load-test/load-test.mjs:ro
+      - ../../scripts/load-test-loop-delay.mjs:/app/load-test/load-test-loop-delay.mjs:ro
+
+volumes:
+  mongo-data:
+  secrets:
+  uploads:
+  app-data:

@@ -1,8 +1,9 @@
 // Event-loop delay probe for the load test (m1-050, D-DB-13 condition 2).
 //
-// Loaded only through NODE_OPTIONS in docker/litestream-poc/compose.load-test.yaml,
-// never by the app itself. It is active only in the web process (`node app`
-// with no task), so tasks and the load client stay unmeasured.
+// Loaded only through NODE_OPTIONS in docker/litestream-poc/compose.load-test.yaml
+// or docker/mongodb-load-test/compose.yaml, never by the app itself. It is
+// active only in the web process (`node app` with no task), so tasks and the
+// load client stay unmeasured.
 //
 // On SIGUSR2 it writes the delay histogram since the last signal to
 // /tmp/loop-delay.json (milliseconds) and resets it. `scripts/load-test.mjs run`
