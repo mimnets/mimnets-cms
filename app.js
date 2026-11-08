@@ -103,8 +103,6 @@ apostrophe({
     '@apostrophecms/redirect': {},
     'assurer-seo': {},
     'assurer-demo': {},
-    // NDJSON dump without Litestream's tables (m1-049).
-    'assurer-backup': {},
     // Test-only tasks (CI admin bootstrap); refuse to run outside a
     // temporary SQLite database.
     'assurer-test': {}

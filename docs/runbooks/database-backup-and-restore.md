@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Draft. **Verified 2026-10-19 (`m0-003`):** SQLite `apos-db-dump`, `apos-db-restore` into a fresh file, and `migrate` rebuilding search. **Not executed:** the `tar` media steps and all PostgreSQL steps (pending the acceptance test in ADR-0002 §6). **m1-032 (2026-11-02):** `assurer-security:sanitize-after-restore` added (§B, §F). Verified on throwaway SQLite databases only, not on PostgreSQL. |
-| **Decision** | [ADR-0002](../architecture/decisions/ADR-0002-database-strategy.md) |
+| **Status** | Draft. **Verified 2026-10-19 (`m0-003`):** SQLite `apos-db-dump`, `apos-db-restore` into a fresh file, and `migrate` rebuilding search. **Not executed:** the `tar` media steps and all PostgreSQL steps (pending the acceptance test in ADR-0002 §6). **m1-032 (2026-11-02):** `assurer-security:sanitize-after-restore` added (§B, §F). Verified on throwaway SQLite databases only, not on PostgreSQL. **m1-052 (2026-11-08):** staging and production run MongoDB 8.0.x with PBM ([ADR-0004](../architecture/decisions/ADR-0004-mongodb-for-staging-and-production.md), accepted 2026-11-08). The PostgreSQL steps here are superseded for those environments; §A (local SQLite) and the JSONL steps still apply. PBM procedures: [m1-046 results](../milestones/m1-046-pbm-poc-results.md), not yet a runbook. |
+| **Decision** | [ADR-0002](../architecture/decisions/ADR-0002-database-strategy.md) · [ADR-0004](../architecture/decisions/ADR-0004-mongodb-for-staging-and-production.md) |
 | **Audience** | Operators with access to the target environment's secrets |
 
 > **Safety rules**

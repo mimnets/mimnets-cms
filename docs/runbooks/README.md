@@ -6,8 +6,8 @@ actually run.
 
 | Runbook | Status |
 |---|---|
-| [Database and media backup and restore](./database-backup-and-restore.md) | Draft (SQLite verified, PostgreSQL pending) |
-| [New site initialization](./new-site-initialization.md) | Draft |
+| [Database and media backup and restore](./database-backup-and-restore.md) | Draft (SQLite verified); PostgreSQL steps superseded for staging and production by ADR-0004 (m1-052) |
+| [New site initialization](./new-site-initialization.md) | Draft; step 2 (PostgreSQL) superseded by ADR-0004 (m1-052) |
 | [Deployment principles](./deployment-principles.md) | Reference only (no deployment approved) |
 | [SEO operations](./seo.md) | §1–§4 verified locally (m1-018); launch checks not yet executed |
 | [Disposable PostgreSQL 16 on OCI (Docker), dev connection, export/import](./postgresql-dev-on-oci-docker.md) | Draft — not yet executed (m1-033); fallback, not chosen |

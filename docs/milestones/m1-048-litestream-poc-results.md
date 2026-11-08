@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Agent-executed test, 2026-11-07, on the owner's Windows PC (Docker Desktop, `linux/amd64` native; `linux/arm64` under emulation). Local and disposable: replicas in a local directory (`file://`), no account, no spending, no server. **Not a human approval.** Owner's decisions on the results: §6 |
+| **Status** | Agent-executed test, 2026-11-07, on the owner's Windows PC (Docker Desktop, `linux/amd64` native; `linux/arm64` under emulation). Local and disposable: replicas in a local directory (`file://`), no account, no spending, no server. **Not a human approval.** Owner's decisions on the results: §6. **Superseded 2026-11-08:** the owner reversed D-DB-13 in m1-051; staging and production run MongoDB ([ADR-0004](../architecture/decisions/ADR-0004-mongodb-for-staging-and-production.md), accepted in m1-052). Kept as a record. The files in `docker/litestream-poc/` are kept as evidence only |
 | **Tests** | P1–P7 from the [m1-047 options paper §7](./m1-047-sqlite-production-options.md#7-proposed-proof-of-concept-needs-separate-approval), with the settings checks of §4.5 |
 | **Files** | [`docker/litestream-poc/`](../../docker/litestream-poc/): `Dockerfile`, `compose.yaml`, `entrypoint.sh`, `litestream.yml`. The demo image files are unchanged |
 | **Related** | D-DB-4 · D-DB-13 · D-SEC-5 · [m1-048 report](../engineering/reports/2026/11/2026-11-07-m1-048-litestream-poc.report.md) |

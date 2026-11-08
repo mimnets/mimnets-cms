@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft. Steps 4–6 are the same commands used in M0 (verified on SQLite). Not yet run for a second site. |
+| **Status** | Draft. Steps 4–6 are the same commands used in M0 (verified on SQLite). Not yet run for a second site. **m1-052 (2026-11-08):** the PostgreSQL database in step 2 is superseded. Staging and production use a new, empty MongoDB 8.0.x database in the site's own container ([ADR-0004](../architecture/decisions/ADR-0004-mongodb-for-staging-and-production.md), accepted 2026-11-08); the staging image that creates it is not built yet. The principle and the other steps are unchanged. |
 | **Decision** | [ADR-0002 §8](../architecture/decisions/ADR-0002-database-strategy.md) |
 
 Principle: **every site is independent.** It has its own database, media store, secrets and
