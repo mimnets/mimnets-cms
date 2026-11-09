@@ -13,7 +13,7 @@
 | Container | Image | Holds | Host ports |
 |---|---|---|---|
 | `site` | `assurer-site:staging`, built from the root `Dockerfile` plus `docker/staging/Dockerfile` | Apostrophe (`APOS_CLUSTER_PROCESSES`, default 2), MongoDB with `requireTLS`, `pbm-agent`, the base-backup schedule | **none** |
-| `nginx` | `assurer-nginx:staging`, official `nginx:1.30.6-alpine` (digest pinned) plus zlib 1.4 | TLS, HTTP redirect, upload limit, rate limit | `80`, `443` |
+| `nginx` | `assurer-nginx:staging`, official `nginx:1.30.6-alpine` (digest pinned) plus zlib 1.4, without the xslt and njs modules and `libxml2` | TLS, HTTP redirect, upload limit, rate limit | `80`, `443` |
 | `certbot` | `assurer-certbot:staging`, official `certbot/certbot:v5.9.0` (digest pinned) plus zlib 1.4 | certificate renewal | none |
 | `cert-bootstrap` (one-off) | the site image | a 30-day self-signed certificate if none exists, so nginx can start | none |
 
@@ -139,6 +139,8 @@ project on `127.0.0.1`. Full results: [m1-055 report](../engineering/reports/202
 | Editor in Chrome: login, in-context edit, draft hidden, publish public | PASS, **bypassing nginx with `APOS_HTTPS=0`** |
 | Editor in Chrome through nginx over HTTPS | PASS (`m1-056`: login, edit, draft hidden, publish public, media upload); the owner clicked through the certificate warning, which the extension cannot operate |
 | Accepted upload through nginx, file served back complete | PASS (`m1-056`: 5 MB, SHA-256 identical) |
+| nginx without the xslt and njs modules: template rendered, `nginx -t`, reload, HTTP redirect, other host names refused, HTTPS answers | PASS (`m1-057`), with no site behind it; proxying to a real site **NOT TESTED** on this image |
+| Site image with the `apt` upgrade (`m1-057`) | **NOT VERIFIED**: not built |
 | `linux/arm64` | **NOT TESTED**: not started in `m1-056` either, because the PC had too little memory |
 | `$S build` as written | **NOT VERIFIED** (`m1-056`): memory fell to 382 MB and the build was stopped |
 | A real Let's Encrypt certificate, first issuance and renewal; a server; §6 rotation; a clean run of the `$S` commands as written (the test used its own project name and ports) | NOT TESTED |
