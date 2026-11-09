@@ -6,7 +6,7 @@
 #     docker compose -f docker/staging/compose.yaml up -d --build
 # Further settings (SMTP and so on) go in docker/staging/site.env (git-ignored).
 # For arm64 on an amd64 PC, also set DOCKER_DEFAULT_PLATFORM=linux/arm64 and
-# ASSURER_TAG_SUFFIX=-arm64, and build with --profile build-only.
+# ASSURER_TAG_SUFFIX=-arm64.
 # Guide: docs/runbooks/staging-container.md
 name: assurer-staging
 
@@ -18,7 +18,9 @@ services:
     build:
       context: ../..
     image: assurer-site:staging-base${ASSURER_TAG_SUFFIX:-}
-    profiles: [build-only]
+    # Built, never started. Not a profile: some Compose versions then refuse the
+    # whole file, because `site` uses this service as a build context (m1-058).
+    scale: 0
     # Compose does not pass DOCKER_DEFAULT_PLATFORM on to a service used only
     # as a build context.
     platform: ${DOCKER_DEFAULT_PLATFORM:-}
