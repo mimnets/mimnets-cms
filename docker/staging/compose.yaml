@@ -6,7 +6,8 @@
 #     docker compose -f docker/staging/compose.yaml up -d --build
 # Further settings (SMTP and so on) go in docker/staging/site.env (git-ignored).
 # For arm64 on an amd64 PC, also set DOCKER_DEFAULT_PLATFORM=linux/arm64 and
-# ASSURER_TAG_SUFFIX=-arm64.
+# ASSURER_TAG_SUFFIX=-arm64. That route is not tested; m1-058 proved arm64 with
+# .github/workflows/staging-arm64.yml instead.
 # Guide: docs/runbooks/staging-container.md
 name: assurer-staging
 

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | **Draft; built and run on the owner's PC only** (`m1-055`, 2026-11-08, agent-executed): see §8 for what was run and what was not. Not run on a server. Running it on a server needs the owner's approval (D-DB-2, D-DB-3, D-DB-7 and the server task) |
+| **Status** | **Draft; built and run on the owner's PC (`amd64`) and on a hosted GitHub runner (`arm64`) only** (`m1-055` to `m1-058`, agent-executed): see §8 for what was run and what was not. Not run on a server. Running it on a server needs the owner's approval (D-DB-2, D-DB-3, D-DB-7 and the server task) |
 | **Purpose** | The staging version of the one-container image (ADR-0004 Decision 2, D-DB-10 (b)): app and MongoDB 8.0.34 in one container with TLS, member authentication, PBM, no demo content and no default password; nginx and certbot in their own containers |
 | **Not for** | Production as it stands: production needs x.509 member authentication (hardening runbook §12 choice 2), the S3 backup storage (D-DB-12) and `APOS_ALLOW_INDEXING=1` |
 | **Files** | [`docker/staging/`](../../docker/staging/): `compose.yaml`, `Dockerfile`, `entrypoint.sh`, `run-as.sh`, `mongod.conf`, `pbm-config.yaml`, `pbmc.sh`, `nginx/`, `certbot/` |
@@ -36,7 +36,7 @@ volume (hardening runbook §5, §7).
 | `APOS_HSTS_MAX_AGE` | same | `300` | raise once HTTPS is confirmed (hardening runbook §8 point 4) |
 | `ASSURER_BACKUP_INTERVAL_HOURS`, `ASSURER_BACKUP_RETENTION` | same | `24`, `8d` | PBM base backups ([PBM runbook](./pbm-backup-and-restore.md) §1) |
 | `ASSURER_MAX_BODY`, `ASSURER_RATE_LIMIT`, `ASSURER_RATE_BURST` | same | `32m`, `30r/s`, `60` | nginx upload limit and per-address rate limit |
-| `ASSURER_HTTP_BIND`, `ASSURER_HTTPS_BIND` | same | `80`, `443` | host ports; `127.0.0.1:8080` and so on for a local test |
+| `ASSURER_HTTP_BIND`, `ASSURER_HTTPS_BIND` | same | `80`, `443` | host ports, on all network interfaces by default; **set `127.0.0.1:80` and `127.0.0.1:443` for a local test**, so the site is not open to the local network (m1-058) |
 | SMTP and form settings | `docker/staging/site.env`, mode `0600`, git-ignored | none | as in [form operations](./form-operations-and-privacy.md) |
 
 The image sets `NODE_ENV=production` and `APOS_DEMO_SITE=0`. Compose sets `APOS_HTTPS=1` and
@@ -116,6 +116,15 @@ Then the hardening runbook §11 checks.
 
 ## 7. Known limits
 
+- **MongoDB 8.0 refuses Linux kernels 6.19 to 7.0.13, on any CPU** (m1-058, SERVER-121912): the site
+  container restarts in a loop, the log shows `[assurer] MongoDB did not start`, and MongoDB's own line
+  says `MongoDB cannot start: Linux kernel versions 6.19 and newer ...`. The kernel belongs to the host,
+  so check `uname -r` before starting, and after any kernel or Docker Desktop update. MongoDB's fix is
+  kernel 7.0.14 or later, but its release notes list the exemption for Ubuntu kernels under the
+  upcoming 8.0.37, so 8.0.34 may still refuse those. See D-DB-16.
+- A build needs a lot of memory on a PC: `amd64` fell from 6.5 GB available to 137 MB in m1-058, even
+  with most steps cached. `arm64` under emulation was not tried there; use the hosted workflow
+  (`.github/workflows/staging-arm64.yml`).
 - The PBM backups are on the same server ([PBM runbook](./pbm-backup-and-restore.md)).
 - No alert on backup status, certificate renewal or the site (hardening runbook §12 choice 8, not
   chosen yet).
@@ -139,8 +148,9 @@ project on `127.0.0.1`. Full results: [m1-055 report](../engineering/reports/202
 | Editor in Chrome: login, in-context edit, draft hidden, publish public | PASS, **bypassing nginx with `APOS_HTTPS=0`** |
 | Editor in Chrome through nginx over HTTPS | PASS (`m1-056`: login, edit, draft hidden, publish public, media upload); the owner clicked through the certificate warning, which the extension cannot operate |
 | Accepted upload through nginx, file served back complete | PASS (`m1-056`: 5 MB, SHA-256 identical) |
-| nginx without the xslt and njs modules: template rendered, `nginx -t`, reload, HTTP redirect, other host names refused, HTTPS answers | PASS (`m1-057`), with no site behind it; proxying to a real site **NOT TESTED** on this image |
-| Site image with the `apt` upgrade (`m1-057`) | **NOT VERIFIED**: not built |
-| `linux/arm64` | **NOT TESTED**: not started in `m1-056` either, because the PC had too little memory |
-| `$S build` as written | **NOT VERIFIED** (`m1-056`): memory fell to 382 MB and the build was stopped |
-| A real Let's Encrypt certificate, first issuance and renewal; a server; §6 rotation; a clean run of the `$S` commands as written (the test used its own project name and ports) | NOT TESTED |
+| nginx without the xslt and njs modules: template rendered, `nginx -t`, reload, HTTP redirect, other host names refused, HTTPS answers | PASS (`m1-057`); with the real site behind it, plus upload limit, accepted upload and rate limit, PASS (`m1-058`) |
+| Site image with the `apt` upgrade | PASS (`m1-058`): built on both platforms, `2.8.4ubuntu0.1` read inside the image. Rescan on `amd64`: 6 high, no critical |
+| `$S build`, `up -d`, `ps`, `logs`, `restart site`, `up -d --build`, the admin password file steps, on `amd64` | PASS (`m1-058`), under the default project name and ports. The memory fell to 137 MB during the build |
+| Editor in Chrome through nginx on the changed images, at 1440 px: login, edit, draft hidden, publish public, media upload, session after a restart | PASS (`m1-058`) |
+| `linux/arm64` on a hosted runner (`ubuntu-22.04-arm`, native): `$S build`, `up -d`, healthy, `apt`, redirect, HTTPS, 413, 429, first base backup with `pbm-agent` OK, restart | PASS (`m1-058`). **Refused by MongoDB on `ubuntu-24.04-arm`**: §7. Not run on `arm64`: Chrome, an accepted upload, the suites, a restore, a scan |
+| A real Let's Encrypt certificate, first issuance and renewal; a server; §6 rotation | NOT TESTED |
