@@ -1,0 +1,123 @@
+# Staging stack on linux/arm64 (m1-058): builds and starts docker/staging on
+# GitHub's native arm64 runner, because the owner's PC has too little memory to
+# build it under emulation. Proves the images build and work on arm64, not a
+# server: the certificate is self-signed and the stack is thrown away.
+#
+# - No repository secrets are used, and nothing is pushed. The stack makes its
+#   own secrets per run. Only the "[assurer]" log lines are printed.
+# - Each check is its own step, so its result can be read from the public API.
+# - The action is pinned as in ci.yml. Updating a pin needs approval (AGENTS.md).
+# Guide: docs/runbooks/staging-container.md
+name: Staging arm64
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/staging-arm64.yml
+      - docker/staging/**
+      - Dockerfile
+      - package-lock.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staging-arm64-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  staging-arm64:
+    name: staging-arm64
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    env:
+      ASSURER_DOMAIN: localhost
+      APOS_BASE_URL: https://localhost
+      S: docker compose -f docker/staging/compose.yaml
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build as the runbook writes it
+        run: $S build
+
+      - name: All images are linux/arm64
+        run: |
+          for image in assurer-site:staging assurer-nginx:staging assurer-certbot:staging; do
+            arch="$(docker image inspect -f '{{.Architecture}}' "$image")"
+            echo "$image $arch"
+            test "$arch" = arm64
+          done
+
+      - name: Start as the runbook writes it
+        run: $S up -d
+
+      - name: Site becomes healthy
+        run: |
+          for _ in $(seq 1 60); do
+            status="$(docker inspect -f '{{.State.Health.Status}}' assurer-staging-site-1)"
+            echo "$status"
+            [ "$status" = healthy ] && exit 0
+            [ "$status" = unhealthy ] && exit 1
+            sleep 5
+          done
+          exit 1
+
+      - name: apt upgrade is in the image and the removed files are gone
+        run: |
+          $S exec -T site dpkg-query -W -f='${Package} ${Version}\n' apt libapt-pkg6.0t64 | tee packages.txt
+          test "$(grep -c ' 2\.8\.4ubuntu0\.1$' packages.txt)" = 2
+          $S exec -T site sh -c 'for f in /usr/local/bin/gosu /opt/js-yaml /app/node_modules/@esbuild; do [ ! -e "$f" ] || exit 1; done'
+
+      - name: HTTP redirects to HTTPS
+        run: |
+          curl -sI http://localhost/ | tee headers.txt
+          grep -q '^HTTP/1.1 301' headers.txt
+          grep -qi '^location: https://localhost/' headers.txt
+
+      - name: HTTPS answers through nginx with HSTS
+        run: |
+          curl -skI https://localhost/ | tee headers.txt
+          grep -qE '^HTTP/[0-9.]+ 200' headers.txt
+          grep -qi '^strict-transport-security:' headers.txt
+
+      - name: nginx refuses an upload over the limit
+        run: |
+          head -c 35651584 /dev/zero > big.bin
+          code="$(curl -sk -o /dev/null -w '%{http_code}' --data-binary @big.bin https://localhost/api/v1/@apostrophecms/attachment/upload)"
+          echo "$code"
+          test "$code" = 413
+
+      - name: nginx rate limit answers 429
+        run: |
+          curl -skZ --parallel-immediate --parallel-max 100 -o /dev/null -w '%{http_code}\n' 'https://localhost/?r=[1-300]' | sort | uniq -c | tee codes.txt
+          grep -q ' 429$' codes.txt
+
+      - name: First base backup finishes and PBM is running
+        run: |
+          for _ in $(seq 1 60); do
+            $S logs site | grep -q '\[assurer\] Base backup finished' && break
+            sleep 5
+          done
+          $S logs site | grep -q '\[assurer\] Base backup finished'
+          $S exec -T site pbmc status | tee pbm.txt
+          grep -q 'pbm-agent \[v2.17.0\] OK' pbm.txt
+
+      - name: Site survives a restart
+        run: |
+          $S restart site
+          for _ in $(seq 1 60); do
+            [ "$(curl -sk -o /dev/null -w '%{http_code}' https://localhost/)" = 200 ] && exit 0
+            sleep 5
+          done
+          exit 1
+
+      - name: Startup log lines
+        if: always()
+        run: $S logs site | grep -F '[assurer]' || true
+
+      - name: Remove the stack
+        if: always()
+        run: $S down -v
