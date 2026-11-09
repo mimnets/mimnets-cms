@@ -100,6 +100,10 @@ machine, ports 27017, 3000 and 22 (from a non-admin address) do not connect.
    `vm.swappiness = 1`, open-files limit at least 64000 (the package's systemd unit sets it),
    transparent huge pages **enabled** for MongoDB 8.0 and later, `noatime` on the data volume.
    If antivirus or EDR software is ever installed, exclude the MongoDB data and log paths [6].
+7. **Kernel (m1-058, D-DB-16, not decided).** MongoDB 8.0 refuses to start on Linux kernels 6.19 to
+   7.0.13. Check `uname -r` before the first start and before each reboot onto a new kernel, and do not
+   move to a newer kernel series without checking it against MongoDB's production notes. Not yet tested
+   on a server.
 
 ## 5. Disk encryption (data at rest)
 
