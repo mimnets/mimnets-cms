@@ -5,7 +5,7 @@
 | **Status** | **Draft; built and run on the owner's PC only** (`m1-055`, 2026-11-08, agent-executed): see §8 for what was run and what was not. Not run on a server. Running it on a server needs the owner's approval (D-DB-2, D-DB-3, D-DB-7 and the server task) |
 | **Purpose** | The staging version of the one-container image (ADR-0004 Decision 2, D-DB-10 (b)): app and MongoDB 8.0.34 in one container with TLS, member authentication, PBM, no demo content and no default password; nginx and certbot in their own containers |
 | **Not for** | Production as it stands: production needs x.509 member authentication (hardening runbook §12 choice 2), the S3 backup storage (D-DB-12) and `APOS_ALLOW_INDEXING=1` |
-| **Files** | [`docker/staging/`](../../docker/staging/): `compose.yaml`, `Dockerfile`, `entrypoint.sh`, `mongod.conf`, `pbm-config.yaml`, `pbmc.sh`, `nginx/`, `certbot/` |
+| **Files** | [`docker/staging/`](../../docker/staging/): `compose.yaml`, `Dockerfile`, `entrypoint.sh`, `run-as.sh`, `mongod.conf`, `pbm-config.yaml`, `pbmc.sh`, `nginx/`, `certbot/` |
 | **Related** | [hardening runbook](./server-hardening-and-patching.md) §6–§8 · [PBM runbook](./pbm-backup-and-restore.md) · [HTTP security and HTTPS proxy](./security-configuration.md) · [demo container](./docker-single-container.md) · [m1-054 cluster results](../milestones/m1-054-cluster-mode-results.md) |
 
 ## 1. Layout
@@ -126,7 +126,7 @@ Then the hardening runbook §11 checks.
 ## 8. Verification
 
 Agent-executed on the owner's PC (`linux/amd64`, Docker Desktop), 2026-11-08, under a disposable
-project on `127.0.0.1`. Full results: [m1-055 report](../engineering/reports/2026/11/2026-11-08-m1-055-staging-image.report.md).
+project on `127.0.0.1`. Full results: [m1-055 report](../engineering/reports/2026/11/2026-11-08-m1-055-staging-image.report.md), and [m1-056 report](../engineering/reports/2026/11/2026-11-09-m1-056-staging-gaps.report.md) for the image without `gosu` and `esbuild`'s binaries, in one layer: suites, secrets, MongoDB and upload checks passed again on it.
 
 | Check | Result |
 |---|---|
@@ -137,7 +137,8 @@ project on `127.0.0.1`. Full results: [m1-055 report](../engineering/reports/202
 | One web process killed (no failed request of 20, replaced); `pbm-agent` killed (restarted, site up) | PASS |
 | certbot `renew` with no certificate, deploy hook with a test certificate, nginx reload | PASS |
 | Editor in Chrome: login, in-context edit, draft hidden, publish public | PASS, **bypassing nginx with `APOS_HTTPS=0`** |
-| Editor in Chrome through nginx over HTTPS | **BLOCKED**: Chrome's warning for the self-signed certificate was not bypassed |
-| Accepted upload through nginx, file served back complete | **NOT VERIFIED**: the upload call ran, but the download check was invalid |
-| `linux/arm64` | **NOT TESTED**: the build was stopped because the PC ran low on memory |
+| Editor in Chrome through nginx over HTTPS | PASS (`m1-056`: login, edit, draft hidden, publish public, media upload); the owner clicked through the certificate warning, which the extension cannot operate |
+| Accepted upload through nginx, file served back complete | PASS (`m1-056`: 5 MB, SHA-256 identical) |
+| `linux/arm64` | **NOT TESTED**: not started in `m1-056` either, because the PC had too little memory |
+| `$S build` as written | **NOT VERIFIED** (`m1-056`): memory fell to 382 MB and the build was stopped |
 | A real Let's Encrypt certificate, first issuance and renewal; a server; §6 rotation; a clean run of the `$S` commands as written (the test used its own project name and ports) | NOT TESTED |

@@ -76,7 +76,7 @@ mongosh_local() {
 }
 
 as_app() {
-  gosu assurer "$@"
+  assurer-run-as assurer "$@"
 }
 
 pbm_uri() {
@@ -152,7 +152,7 @@ EOF
 agent_loop() {
   while true; do
     log "Starting pbm-agent"
-    PBM_MONGODB_URI="$(pbm_uri)" gosu pbm pbm-agent > /dev/null 2>&1 || true
+    PBM_MONGODB_URI="$(pbm_uri)" assurer-run-as pbm pbm-agent > /dev/null 2>&1 || true
     log "pbm-agent stopped; starting it again in 5 s"
     sleep 5
   done
@@ -220,7 +220,7 @@ chmod 711 "$SECRETS"
 chown -R mongodb:mongodb /data/db
 chown -R assurer:assurer /app/public/uploads /app/data
 
-gosu mongodb mongod --config /etc/assurer/mongod.conf --wiredTigerCacheSizeGB "$CACHE_GB" &
+assurer-run-as mongodb mongod --config /etc/assurer/mongod.conf --wiredTigerCacheSizeGB "$CACHE_GB" &
 mongod_pid=$!
 
 until mongosh_local --eval 'db.hello().ok' > /dev/null 2>&1; do

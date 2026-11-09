@@ -132,6 +132,6 @@ and 108 KB). Full results: [m1-055 report](../engineering/reports/2026/11/2026-1
 | `pbm-agent` restart after a kill | PASS |
 | Newest recoverable moment | One reading, 4.6 minutes behind. **Not an RPO measurement** |
 | Scan (D-SEC-5) | The same three PBM findings; other findings under D-SEC-8 |
+| `m1-056`, image without `gosu`, in one layer: scheduled base backup; PITR restore into a new, empty container; §3 step 4 with the test project's volume prefix | PASS; 85 s to a working site, workflow 15/15, persistence 7/7, smoke 17/18 (the same expected failure) |
 
-**Not tested:** real data sizes, so RPO during a base backup and RTO are unproven; §3 step 4 as written
-(the test removed its whole project); §4; a failed backup's log line; `linux/arm64`; S3 storage.
+**Not tested:** real data sizes, so RPO during a base backup and RTO are unproven; §4; a failed backup's log line; `linux/arm64`; S3 storage.
