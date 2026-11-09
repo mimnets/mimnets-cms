@@ -29,3 +29,7 @@ start from handoff
 6. The Chrome requests in the nginx log at 16:27:13–15: **"Yes, mine"**.
 7. Commit and push the workflow and this record; the owner opens the PR; the agent then records the
    results and commits and pushes those: **"approve"**. Merge not included.
+8. The first `arm64` run failed before building: `service "site" declares unknown service "base" as
+   additional contexts staging-base` (error pasted by the owner). The agent proposed replacing the
+   `build-only` profile with `scale: 0`, a Compose version step, a rerun on `amd64` on `127.0.0.1` and
+   `down -v` of that test stack: **"approve"**.

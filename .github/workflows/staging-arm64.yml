@@ -40,6 +40,9 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Compose version
+        run: docker compose version
+
       - name: Build as the runbook writes it
         run: $S build
 
