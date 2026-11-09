@@ -121,6 +121,17 @@ jobs:
         if: always()
         run: $S logs site | grep -F '[assurer]' || true
 
+      # MongoDB's own log lines hold no passwords, only user and host names.
+      - name: Diagnostics after a failure
+        if: failure()
+        run: |
+          uname -m
+          getconf PAGESIZE
+          grep -m1 -i '^features' /proc/cpuinfo || true
+          $S ps -a
+          docker run --rm --entrypoint mongod assurer-site:staging --version || echo "mongod --version exit $?"
+          $S logs --tail 60 site | grep -vF '[assurer]' | cut -c1-600 || true
+
       - name: Remove the stack
         if: always()
         run: $S down -v

@@ -33,3 +33,7 @@ start from handoff
    additional contexts staging-base` (error pasted by the owner). The agent proposed replacing the
    `build-only` profile with `scale: 0`, a Compose version step, a rerun on `amd64` on `127.0.0.1` and
    `down -v` of that test stack: **"approve"**.
+9. The next `arm64` run built the images, but the log showed `[assurer] MongoDB did not start`. The
+   agent proposed a step that prints diagnostics after a failure, including MongoDB's own log lines in
+   this public repository: **"APPROVE"**. The owner merged PRs #61 and #62 straight after opening
+   them, so the agent reads each run on the PR that started it.
