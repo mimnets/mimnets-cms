@@ -4,4 +4,4 @@
 set -euo pipefail
 PBM_MONGODB_URI="mongodb://pbm:$(cat /data/secrets/mongo-pbm-password)@127.0.0.1:27017/?authSource=admin&replicaSet=rs0&tls=true&tlsCAFile=/data/secrets/tls/ca.pem"
 export PBM_MONGODB_URI
-exec gosu pbm pbm "$@"
+exec assurer-run-as pbm pbm "$@"

@@ -26,7 +26,7 @@ RUN set -eux; \
       "https://repo.percona.com/pbm/apt/pool/main/p/percona-backup-mongodb/percona-backup-mongodb_${PBM_VERSION}_${TARGETARCH}.deb"; \
     echo "$sha  /tmp/pbm.deb" | sha256sum -c -
 
-FROM ${BASE_IMAGE}
+FROM ${BASE_IMAGE} AS assembled
 COPY --from=pbm-download /tmp/pbm.deb /tmp/pbm.deb
 RUN dpkg -i /tmp/pbm.deb && rm /tmp/pbm.deb && pbm version
 
@@ -35,14 +35,40 @@ RUN dpkg -i /tmp/pbm.deb && rm /tmp/pbm.deb && pbm version
 RUN useradd --system --uid 1002 --no-create-home --shell /usr/sbin/nologin pbm \
   && mkdir -p /backups && chown pbm:pbm /backups && chmod 700 /backups \
   && rm /usr/local/bin/assurer-entrypoint /etc/assurer/mongod.conf
+
+# What the running site does not need, because of the critical and high findings
+# in it (D-SEC-8): gosu (see run-as.sh), the mongo image's entrypoint with its
+# js-yaml, and the esbuild binaries, which only the build stage uses. esbuild's
+# JavaScript stays, because the vite module still loads it.
+RUN rm -rf /usr/local/bin/gosu /usr/local/bin/docker-entrypoint.sh /opt/js-yaml /js-yaml.js \
+    /app/node_modules/esbuild/bin /app/node_modules/@esbuild \
+  && test -z "$(find /app/node_modules -type f -name esbuild)"
 COPY docker/staging/mongod.conf /etc/assurer/mongod.conf
 COPY docker/staging/pbm-config.yaml /etc/assurer/pbm-config.yaml
 COPY --chmod=755 docker/staging/entrypoint.sh /usr/local/bin/assurer-staging-entrypoint
 COPY --chmod=755 docker/staging/pbmc.sh /usr/local/bin/pbmc
+COPY --chmod=755 docker/staging/run-as.sh /usr/local/bin/assurer-run-as
 
+# One layer, because a file removed above otherwise stays in the base image's
+# layers, where a scanner still finds it (m1-056). Nothing is inherited from
+# the stages above, so every setting the image needs is declared here.
+FROM scratch
+COPY --from=assembled / /
+ARG APOS_RELEASE_ID=docker-local
+WORKDIR /app
+# GLIBC_TUNABLES and HOME as in the mongo base image; update them if it changes.
 # No demonstration notice (lib/demo-site.js). Two web processes (m1-054).
-ENV APOS_DEMO_SITE=0 \
-    APOS_CLUSTER_PROCESSES=2
-
-VOLUME ["/backups"]
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    HOME=/data/db \
+    GLIBC_TUNABLES=glibc.pthread.rseq=0 \
+    NODE_ENV=production \
+    APOS_RELEASE_ID=$APOS_RELEASE_ID \
+    APOS_DEMO_SITE=0 \
+    APOS_CLUSTER_PROCESSES=2 \
+    PORT=3000 \
+    ADDRESS=0.0.0.0
+EXPOSE 3000
+VOLUME ["/data/db", "/data/configdb", "/data/secrets", "/app/public/uploads", "/app/data", "/backups"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=180s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:3000/').then(r => process.exit(r.status === 200 ? 0 : 1), () => process.exit(1))"
 ENTRYPOINT ["assurer-staging-entrypoint"]
