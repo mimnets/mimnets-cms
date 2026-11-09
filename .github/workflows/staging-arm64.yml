@@ -29,7 +29,9 @@ concurrency:
 jobs:
   staging-arm64:
     name: staging-arm64
-    runs-on: ubuntu-24.04-arm
+    # MongoDB 8.0 refuses Linux kernels 6.19 to 7.0.13, which ubuntu-24.04-arm
+    # hit in m1-058 (production notes in the MongoDB manual).
+    runs-on: ubuntu-22.04-arm
     timeout-minutes: 45
     env:
       ASSURER_DOMAIN: localhost
@@ -40,8 +42,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Compose version
-        run: docker compose version
+      - name: Kernel and Compose versions
+        run: |
+          uname -r
+          docker compose version
 
       - name: Build as the runbook writes it
         run: $S build

@@ -37,3 +37,6 @@ start from handoff
    agent proposed a step that prints diagnostics after a failure, including MongoDB's own log lines in
    this public repository: **"APPROVE"**. The owner merged PRs #61 and #62 straight after opening
    them, so the agent reads each run on the PR that started it.
+10. The diagnostics showed MongoDB refusing the runner's kernel (SERVER-121912). The owner chose **"Try
+    older runner, then record (Recommended)"**: one more PR on `ubuntu-22.04-arm`, then record the
+    result, with `arm64` BLOCKED by the kernel if that runner does not help.
