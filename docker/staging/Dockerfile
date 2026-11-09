@@ -30,6 +30,15 @@ FROM ${BASE_IMAGE} AS assembled
 COPY --from=pbm-download /tmp/pbm.deb /tmp/pbm.deb
 RUN dpkg -i /tmp/pbm.deb && rm /tmp/pbm.deb && pbm version
 
+# apt 2.8.3 in the pinned mongo image has a high finding (CVE-2026-109518,
+# D-SEC-8, m1-057). The site never runs apt. Remove this once the base image
+# ships the fix. If Ubuntu replaces this version, the build fails here: pin the
+# new one.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends --only-upgrade \
+    apt=2.8.4ubuntu0.1 libapt-pkg6.0t64=2.8.4ubuntu0.1 \
+  && rm -rf /var/lib/apt/lists/*
+
 # pbm-agent runs as its own OS user, so the app's user cannot read its
 # credentials.
 RUN useradd --system --uid 1002 --no-create-home --shell /usr/sbin/nologin pbm \
