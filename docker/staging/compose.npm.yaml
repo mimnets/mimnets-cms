@@ -1,0 +1,28 @@
+# NPM mode (m1-062, D-DB-17 option B; design: docs/milestones/m1-061-npm-proxy-design.md).
+# For a host where Nginx Proxy Manager (NPM) already owns ports 80 and 443. NPM
+# terminates TLS and issues the certificate, and forwards plain HTTP to nginx's
+# internal port 8080 over the external assurer-npm network. The stack publishes
+# no port and certbot does not start. Create the network and join NPM to it
+# first, then run from the repository root:
+#   docker compose -f docker/staging/compose.yaml -f docker/staging/compose.npm.yaml up -d
+# Guide: docs/runbooks/staging-container.md, "NPM mode".
+services:
+  nginx:
+    # `!reset` needs a recent Compose v2; `config` must show no ports on nginx.
+    ports: !reset []
+    environment:
+      # NPM's fixed address on assurer-npm: the only sender whose X-Real-IP
+      # nginx trusts. No default, so a wrong guess cannot slip through.
+      ASSURER_UPSTREAM_PROXY_IP: ${ASSURER_UPSTREAM_PROXY_IP:?set NPM's fixed address on the assurer-npm network}
+    networks:
+      npm:
+        ipv4_address: ${ASSURER_NPM_NGINX_IP:-172.30.56.10}
+
+  # NPM renews the certificate (design §4.4), so certbot is not started.
+  certbot:
+    profiles: [standalone]
+
+networks:
+  npm:
+    name: ${ASSURER_NPM_NETWORK:-assurer-npm}
+    external: true

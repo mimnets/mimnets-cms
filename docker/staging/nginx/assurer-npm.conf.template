@@ -1,0 +1,43 @@
+# NPM mode (m1-062, D-DB-17 option B; design: docs/milestones/m1-061-npm-proxy-design.md
+# §4). Rendered by 35-assurer-npm.sh only when ${ASSURER_UPSTREAM_PROXY_IP} is set
+# (compose.npm.yaml). Nginx Proxy Manager (NPM) terminates TLS and forwards plain
+# HTTP to port 8080 over the assurer-npm network. This port is never published.
+
+# Any other host name: close the connection.
+server {
+  listen 8080 default_server;
+  return 444;
+}
+
+server {
+  listen 8080;
+  server_name ${ASSURER_DOMAIN};
+
+  # NPM puts the visitor's address in X-Real-IP. Only NPM's fixed address is
+  # trusted to set it; from any other sender the header is ignored. After this,
+  # $remote_addr is the visitor, so the rate limit, the X-Forwarded-For below
+  # and the app's form limit are per visitor again (design §4.3).
+  set_real_ip_from ${ASSURER_UPSTREAM_PROXY_IP};
+  real_ip_header X-Real-IP;
+
+  # Apostrophe sets no limit of its own on uploads (m1-055 report).
+  client_max_body_size ${ASSURER_MAX_BODY};
+
+  # Keep in step with the 443 block of assurer.conf.template.
+  location / {
+    limit_req zone=assurer_req burst=${ASSURER_RATE_BURST} nodelay;
+
+    set $assurer_site http://site:3000;
+    proxy_pass $assurer_site;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    # Replaces anything NPM passed on. NPM forces HTTPS, so the visitor's
+    # scheme is always https. The app trusts these headers from this
+    # container's address only.
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_read_timeout 120s;
+    proxy_send_timeout 120s;
+  }
+}

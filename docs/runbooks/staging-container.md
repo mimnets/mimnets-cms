@@ -5,7 +5,7 @@
 | **Status** | **Draft; built and run on the owner's PC (`amd64`) and on a hosted GitHub runner (`arm64`) only** (`m1-055` to `m1-058`, agent-executed): see §8 for what was run and what was not. Not run on a server. Running it on a server needs the owner's approval (D-DB-2, D-DB-3, D-DB-7 and the server task) |
 | **Purpose** | The staging version of the one-container image (ADR-0004 Decision 2, D-DB-10 (b)): app and MongoDB 8.0.34 in one container with TLS, member authentication, PBM, no demo content and no default password; nginx and certbot in their own containers |
 | **Not for** | Production as it stands: production needs x.509 member authentication (hardening runbook §12 choice 2), the S3 backup storage (D-DB-12) and `APOS_ALLOW_INDEXING=1` |
-| **Files** | [`docker/staging/`](../../docker/staging/): `compose.yaml`, `Dockerfile`, `entrypoint.sh`, `run-as.sh`, `mongod.conf`, `pbm-config.yaml`, `pbmc.sh`, `nginx/`, `certbot/` |
+| **Files** | [`docker/staging/`](../../docker/staging/): `compose.yaml`, `compose.npm.yaml` (§9), `Dockerfile`, `entrypoint.sh`, `run-as.sh`, `mongod.conf`, `pbm-config.yaml`, `pbmc.sh`, `nginx/`, `certbot/` |
 | **Related** | [hardening runbook](./server-hardening-and-patching.md) §6–§8 · [PBM runbook](./pbm-backup-and-restore.md) · [HTTP security and HTTPS proxy](./security-configuration.md) · [demo container](./docker-single-container.md) · [m1-054 cluster results](../milestones/m1-054-cluster-mode-results.md) |
 
 ## 1. Layout
@@ -159,3 +159,67 @@ project on `127.0.0.1`. Full results: [m1-055 report](../engineering/reports/202
 | `linux/arm64`, same workflow, on every run: runner kernel as an annotation; accepted 5 MB upload through nginx, SHA-256 identical; PITR restore drill (PBM runbook §3) with a page published after the newest base backup | PASS (`m1-060`, kernel `6.8.0-1070-azure`, drill 40 s to a working site). Not run on `arm64`: Chrome, the suites |
 | Docker Scout scan of the three `arm64` images (artifact of that workflow), critical and high | PASS (`m1-060`): site 6 high, nginx 1, certbot 13, no critical; the same findings as `amd64` |
 | A real Let's Encrypt certificate, first issuance and renewal; a server; §6 rotation | NOT TESTED |
+| NPM mode (§9) on `amd64`, behind a throwaway nginx stand-in for NPM, visitors on a non-private test subnet: no host port; visitor address in nginx's log and the app's `req.ip`; spoofed `X-Real-IP` and `X-Forwarded-For` ignored; a rogue sender on the NPM network not trusted; other host names 444; rate limit and form limit per visitor; HSTS once; `Secure` cookie; 413 at 34 MB; 5 MB SHA-256 identical; Chrome as an editor (login, edit, draft hidden, publish, media upload); standalone mode unchanged | PASS (`m1-062`). **Not tested with NPM itself, on a server, over IPv6, or with a real certificate** |
+
+## 9. NPM mode (shared host, D-DB-17 option B)
+
+For a host where Nginx Proxy Manager (NPM) already owns ports 80 and 443, such as the owner's OCI
+server. Real staging and production use the standalone mode above (D-DB-17 option A). Design:
+[m1-061 paper](../milestones/m1-061-npm-proxy-design.md) §4. Built and tested locally in `m1-062`
+against a stand-in for NPM, not against NPM itself (§8).
+
+```
+ Internet ──► :80/:443 NPM ──assurer-npm (172.30.56.0/24)──► nginx :8080 ──edge──► site:3000
+               TLS, certificate     NPM 172.30.56.2              real_ip from NPM only
+```
+
+What changes against the standalone mode:
+
+| Point | NPM mode |
+|---|---|
+| Host ports | none; `ASSURER_HTTP_BIND` and `ASSURER_HTTPS_BIND` do not apply |
+| Entry | nginx's internal port `8080`, on the external network `assurer-npm` only |
+| Visitor address | nginx takes `X-Real-IP` from `ASSURER_UPSTREAM_PROXY_IP` only; rate limit, logs and the app's form limit are per visitor. `APOS_TRUST_PROXY` does not change |
+| Certificate | NPM issues and renews it. `certbot` does not start; §3 "First real certificate" does not apply |
+| HSTS | the app sends it; leave it **off** in NPM, so it is not sent twice |
+
+**Settings** (shell or `docker/staging/.env`), besides §2:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `ASSURER_UPSTREAM_PROXY_IP` | required | NPM's fixed address on `assurer-npm`. One IPv4 address; nginx refuses to start on anything else |
+| `ASSURER_NPM_NGINX_IP` | `172.30.56.10` | nginx's fixed address on `assurer-npm`; NPM forwards to it |
+| `ASSURER_NPM_NETWORK` | `assurer-npm` | the external network's name |
+
+**Owner's steps, once per host** (the owner's NPM, the owner's change; each needs the owner's approval):
+
+1. Create the network. `--internal` keeps it to NPM and nginx, with no route out:
+   `docker network create --internal --subnet 172.30.56.0/24 assurer-npm`
+2. In NPM's Compose file: join `assurer-npm` (external) with `ipv4_address: 172.30.56.2`; set
+   `IP_RANGES_FETCH_ENABLED=false` (paper §3.3); keep port 81 off the internet (an SSH tunnel to it
+   is enough). Recreate NPM. Nothing else may join `assurer-npm`: nginx trusts one address on it.
+3. Start the stack (below), then in NPM's admin UI add a proxy host for `$ASSURER_DOMAIN`:
+   scheme `http`, forward to `172.30.56.10` port `8080`; Let's Encrypt certificate; Force SSL **on**,
+   HTTP/2 **on**, HSTS **off**, WebSocket support **off**, Cache Assets **off**, Block Common Exploits
+   **off** for the first test (untested with Apostrophe).
+
+**Start and everyday commands:**
+
+```sh
+S="docker compose -f docker/staging/compose.yaml -f docker/staging/compose.npm.yaml"
+$S config | grep -c published   # 0 in NPM mode (2 in standalone mode)
+$S up -d                         # site, cert-bootstrap, nginx; no certbot
+$S logs nginx | grep assurer-npm  # "NPM mode: port 8080, X-Real-IP trusted from <NPM address> only"
+```
+
+Use `$S` for every command in §3 to §6, or nginx loses the NPM settings and publishes 80 and 443
+again. Switching a running standalone stack: `$S rm -sf certbot` first, because `up` leaves a running
+container of a service that is no longer started. That step was not tested.
+`ports: !reset` needs a Compose version that supports it: if `$S config` still lists ports on nginx,
+do not start.
+
+**Checks after a start** (paper §6; from outside the host): HTTP redirects to HTTPS; the certificate is
+NPM's Let's Encrypt one; `Strict-Transport-Security` appears once; nginx's log
+(`$S logs nginx`) shows the visitor's real address, not a `172.x` one, also with a forged
+`X-Real-IP: 203.0.113.9` header. A `172.x` address there means Docker's userland proxy is in front of
+NPM, and the per-visitor limits do not work: stop and resolve that first.
