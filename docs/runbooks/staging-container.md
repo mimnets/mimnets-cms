@@ -120,8 +120,10 @@ Then the hardening runbook §11 checks.
   container restarts in a loop, the log shows `[assurer] MongoDB did not start`, and MongoDB's own line
   says `MongoDB cannot start: Linux kernel versions 6.19 and newer ...`. The kernel belongs to the host,
   so check `uname -r` before starting, and after any kernel or Docker Desktop update. MongoDB's fix is
-  kernel 7.0.14 or later, but its release notes list the exemption for Ubuntu kernels under the
-  upcoming 8.0.37, so 8.0.34 may still refuse those. See D-DB-16.
+  kernel 7.0.14 or later, but Ubuntu reports its 7.0 kernels as `7.0.0-<ABI>`, and the exemption for
+  them comes only in the upcoming 8.0.37 (SERVER-131779), so 8.0.34 refuses every Ubuntu 7.0 kernel.
+  D-DB-16 (decided m1-059): servers stay on Ubuntu 24.04's 6.8 kernel line; see the hardening runbook
+  §4.
 - A build needs a lot of memory on a PC: `amd64` fell from 6.5 GB available to 137 MB in m1-058, even
   with most steps cached. `arm64` under emulation was not tried there; use the hosted workflow
   (`.github/workflows/staging-arm64.yml`).
