@@ -6,7 +6,12 @@
 # - No repository secrets are used, and nothing is pushed. The stack makes its
 #   own secrets per run. Only the "[assurer]" log lines are printed.
 # - Each check is its own step, so its result can be read from the public API.
-# - The action is pinned as in ci.yml. Updating a pin needs approval (AGENTS.md).
+# - The actions are pinned as in ci.yml. Updating a pin needs approval (AGENTS.md).
+# - m1-060 adds an accepted upload, a PITR restore drill and the images as a
+#   one-day artifact for a Docker Scout scan on the owner's PC. The upload logs
+#   in as the stack's own admin, whose password this run makes; it is masked
+#   and never leaves the runner. The owner approved the drill for this
+#   throwaway stack on every run (PBM runbook §3).
 # Guide: docs/runbooks/staging-container.md
 name: Staging arm64
 
@@ -32,19 +37,24 @@ jobs:
     # MongoDB 8.0 refuses Linux kernels 6.19 to 7.0.13, which ubuntu-24.04-arm
     # hit in m1-058 (production notes in the MongoDB manual).
     runs-on: ubuntu-22.04-arm
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       ASSURER_DOMAIN: localhost
       APOS_BASE_URL: https://localhost
       S: docker compose -f docker/staging/compose.yaml
+      R: docker compose -f docker/staging/compose.yaml --profile restore
+      MARKER_SLUG: /m1-060-restore-marker
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
+      # The annotation can be read from the public API without a login.
       - name: Kernel and Compose versions
         run: |
           uname -r
+          echo "::notice title=Runner kernel::$(uname -r)"
+          echo "Runner kernel: $(uname -r)" >> "$GITHUB_STEP_SUMMARY"
           docker compose version
 
       - name: Build as the runbook writes it
@@ -57,6 +67,24 @@ jobs:
             echo "$image $arch"
             test "$arch" = arm64
           done
+
+      # For a Docker Scout scan on the owner's PC (archive://), which needs a
+      # Docker ID this workflow does not have. The images hold no secrets:
+      # the stack makes them at its first start.
+      - name: Save the images for the scan
+        run: |
+          mkdir images
+          for image in assurer-site:staging assurer-nginx:staging assurer-certbot:staging; do
+            docker save -o "images/${image%%:*}.tar" "$image"
+          done
+          ls -l images
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: staging-arm64-images
+          path: images/
+          retention-days: 1
+          if-no-files-found: error
 
       - name: Start as the runbook writes it
         run: $S up -d
@@ -121,6 +149,99 @@ jobs:
           done
           exit 1
 
+      # The token is kept on the runner for the marker step, masked like the password.
+      - name: Accepted upload through nginx is served back complete
+        run: |
+          set -o pipefail
+          password="$($S exec -T site cat /data/secrets/admin-initial-password)"
+          echo "::add-mask::$password"
+          token="$(jq -n --arg p "$password" '{username: "admin", password: $p}' |
+            curl -skf -H 'content-type: application/json' --data-binary @- \
+              https://localhost/api/v1/@apostrophecms/login/login | jq -r .token)"
+          echo "::add-mask::$token"
+          test -n "$token" && test "$token" != null
+          printf '%s' "$token" > "$RUNNER_TEMP/apos-token"
+          head -c 5242880 /dev/urandom > m1060-upload.pdf
+          curl -skf -H "authorization: Bearer $token" \
+            -F 'file=@m1060-upload.pdf;type=application/pdf' \
+            https://localhost/api/v1/@apostrophecms/attachment/upload > attachment.json
+          jq -r '"/uploads/attachments/\(._id)-\(.name).\(.extension)"' attachment.json | tee upload-path.txt
+          curl -skf "https://localhost$(cat upload-path.txt)" -o served.pdf
+          sha256sum m1060-upload.pdf served.pdf | tee sums.txt
+          test "$(cut -d' ' -f1 sums.txt | uniq | wc -l)" = 1
+
+      # The restart starts a second base backup 2 minutes later. The page is
+      # published after it, so the drill must replay the oplog to bring it back.
+      - name: Marker page published after the newest base backup
+        run: |
+          set -o pipefail
+          count=0
+          for _ in $(seq 1 60); do
+            count="$($S logs site | grep -cF '[assurer] Base backup finished' || true)"
+            [ "$count" -ge 2 ] && break
+            sleep 5
+          done
+          test "$count" -ge 2
+          token="$(cat "$RUNNER_TEMP/apos-token")"
+          marker="m1-060 restore marker $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          page="$(jq -n --arg t "$marker" --arg s "$MARKER_SLUG" \
+            '{title: $t, type: "default-page", slug: $s, _targetId: "_home", _position: "lastChild"}' |
+            curl -skf -H "authorization: Bearer $token" -H 'content-type: application/json' --data-binary @- \
+              'https://localhost/api/v1/@apostrophecms/page?aposMode=draft' | jq -r ._id)"
+          curl -skf -X POST -H "authorization: Bearer $token" -H 'content-type: application/json' -d '{}' \
+            "https://localhost/api/v1/@apostrophecms/page/$page/publish?aposMode=draft" > /dev/null
+          date -u +%s | tee marker-time.txt
+          curl -skf "https://localhost$MARKER_SLUG" -o marker.html
+          grep -qF "$marker" marker.html
+
+      # PITR slices are written every 5 minutes (PBM runbook §1).
+      - name: PITR covers the marker page
+        run: |
+          marker_time="$(cat marker-time.txt)"
+          end=
+          for _ in $(seq 1 60); do
+            $S exec -T site pbmc list --out=json > pbm-list.json || true
+            end="$(jq --argjson t "$marker_time" \
+              '[.. | objects | select(has("start") and has("end")) | select(.start <= $t and .end >= $t) | .end] | max // empty' \
+              pbm-list.json || true)"
+            [ -n "$end" ] && break
+            sleep 10
+          done
+          test -n "$end"
+          date -u -d "@$end" +%Y-%m-%dT%H:%M:%S | tee restore-time.txt
+
+      # PBM runbook §3 step 2, into the restore container's own, empty volumes.
+      - name: PITR restore into a new, empty container
+        run: |
+          date +%s > restore-start.txt
+          $R run --rm restore-copy
+          $R up -d --no-deps restore
+          ready=0
+          for _ in $(seq 1 60); do
+            ready="$($R logs restore | grep -cF 'Restore mode: MongoDB and pbm-agent only' || true)"
+            [ "$ready" -ge 1 ] && break
+            sleep 5
+          done
+          test "$ready" -ge 1
+          $R exec -T restore pbmc config --force-resync --wait
+          $R exec -T restore pbmc restore --time="$(cat restore-time.txt)" --yes --wait
+
+      # PBM runbook §3 step 3.
+      - name: Restored site serves the marker page and the upload
+        run: |
+          ASSURER_RESTORE_MODE=site $R up -d --no-deps restore
+          for _ in $(seq 1 60); do
+            [ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3044/)" = 200 ] && break
+            sleep 5
+          done
+          curl -sf "http://127.0.0.1:3044$MARKER_SLUG" -o restored.html
+          grep -qF "m1-060 restore marker $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" restored.html
+          curl -sf "http://127.0.0.1:3044$(cat upload-path.txt)" -o restored.pdf
+          sha256sum m1060-upload.pdf restored.pdf | tee sums.txt
+          test "$(cut -d' ' -f1 sums.txt | uniq | wc -l)" = 1
+          seconds=$(( $(date +%s) - $(cat restore-start.txt) ))
+          echo "::notice title=Restore drill::$seconds s from the copy step to a working site"
+
       - name: Startup log lines
         if: always()
         run: $S logs site | grep -F '[assurer]' || true
@@ -135,7 +256,10 @@ jobs:
           $S ps -a
           docker run --rm --entrypoint mongod assurer-site:staging --version || echo "mongod --version exit $?"
           $S logs --tail 60 site | grep -vF '[assurer]' | cut -c1-600 || true
+          $R ps -a restore || true
+          $R logs --tail 60 restore | cut -c1-600 || true
+          $R exec -T restore pbmc logs --tail 30 || true
 
       - name: Remove the stack
         if: always()
-        run: $S down -v
+        run: $R down -v
