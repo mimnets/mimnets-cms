@@ -53,7 +53,9 @@ it shows as `done` in `pbmc list`.
 
 A drill restores a copy of the backups into a separate container with its own volumes. It never
 writes to the running site. **Run it only with the owner's approval** (AGENTS.md: restore is
-destructive; restore into a new, empty database only).
+destructive; restore into a new, empty database only). The one standing approval is the hosted
+`arm64` workflow (`.github/workflows/staging-arm64.yml`), which runs this drill on every run on a
+throwaway runner (owner, m1-060); it covers nothing else.
 
 1. Choose the time to restore to, from `pbmc list` (a time inside a PITR range, UTC).
 2. Copy the secrets, media and backups into the drill's own volumes, and start it empty in restore
@@ -133,5 +135,6 @@ and 108 KB). Full results: [m1-055 report](../engineering/reports/2026/11/2026-1
 | Newest recoverable moment | One reading, 4.6 minutes behind. **Not an RPO measurement** |
 | Scan (D-SEC-5) | The same three PBM findings; other findings under D-SEC-8 |
 | `m1-056`, image without `gosu`, in one layer: scheduled base backup; PITR restore into a new, empty container; §3 step 4 with the test project's volume prefix | PASS; 85 s to a working site, workflow 15/15, persistence 7/7, smoke 17/18 (the same expected failure) |
+| `m1-060`, `linux/arm64` on a hosted runner (`ubuntu-22.04-arm`): §3 steps 2 and 3 as written, to the end of the PITR range that covers a page published after the newest base backup | PASS; page and a 5 MB upload served by the restored site, SHA-256 identical; 40 s from the copy step to a working site; a 5 m 36 s wait for the slice first |
 
-**Not tested:** real data sizes, so RPO during a base backup and RTO are unproven; §4; a failed backup's log line; `linux/arm64`; S3 storage.
+**Not tested:** real data sizes, so RPO during a base backup and RTO are unproven; §4; a failed backup's log line; S3 storage.

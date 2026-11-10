@@ -126,7 +126,8 @@ Then the hardening runbook §11 checks.
   §4.
 - A build needs a lot of memory on a PC: `amd64` fell from 6.5 GB available to 137 MB in m1-058, even
   with most steps cached. `arm64` under emulation was not tried there; use the hosted workflow
-  (`.github/workflows/staging-arm64.yml`).
+  (`.github/workflows/staging-arm64.yml`). It also leaves the three images as a one-day artifact
+  for a scan (`docker scout cves archive://<file>.tar`, m1-060).
 - The PBM backups are on the same server ([PBM runbook](./pbm-backup-and-restore.md)).
 - No alert on backup status, certificate renewal or the site (hardening runbook §12 choice 8, not
   chosen yet).
@@ -154,5 +155,7 @@ project on `127.0.0.1`. Full results: [m1-055 report](../engineering/reports/202
 | Site image with the `apt` upgrade | PASS (`m1-058`): built on both platforms, `2.8.4ubuntu0.1` read inside the image. Rescan on `amd64`: 6 high, no critical |
 | `$S build`, `up -d`, `ps`, `logs`, `restart site`, `up -d --build`, the admin password file steps, on `amd64` | PASS (`m1-058`), under the default project name and ports. The memory fell to 137 MB during the build |
 | Editor in Chrome through nginx on the changed images, at 1440 px: login, edit, draft hidden, publish public, media upload, session after a restart | PASS (`m1-058`) |
-| `linux/arm64` on a hosted runner (`ubuntu-22.04-arm`, native): `$S build`, `up -d`, healthy, `apt`, redirect, HTTPS, 413, 429, first base backup with `pbm-agent` OK, restart | PASS (`m1-058`). **Refused by MongoDB on `ubuntu-24.04-arm`**: §7. Not run on `arm64`: Chrome, an accepted upload, the suites, a restore, a scan |
+| `linux/arm64` on a hosted runner (`ubuntu-22.04-arm`, native): `$S build`, `up -d`, healthy, `apt`, redirect, HTTPS, 413, 429, first base backup with `pbm-agent` OK, restart | PASS (`m1-058`). **Refused by MongoDB on `ubuntu-24.04-arm`**: §7 |
+| `linux/arm64`, same workflow, on every run: runner kernel as an annotation; accepted 5 MB upload through nginx, SHA-256 identical; PITR restore drill (PBM runbook §3) with a page published after the newest base backup | PASS (`m1-060`, kernel `6.8.0-1070-azure`, drill 40 s to a working site). Not run on `arm64`: Chrome, the suites |
+| Docker Scout scan of the three `arm64` images (artifact of that workflow), critical and high | PASS (`m1-060`): site 6 high, nginx 1, certbot 13, no critical; the same findings as `amd64` |
 | A real Let's Encrypt certificate, first issuance and renewal; a server; §6 rotation | NOT TESTED |
