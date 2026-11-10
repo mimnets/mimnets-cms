@@ -100,10 +100,14 @@ machine, ports 27017, 3000 and 22 (from a non-admin address) do not connect.
    `vm.swappiness = 1`, open-files limit at least 64000 (the package's systemd unit sets it),
    transparent huge pages **enabled** for MongoDB 8.0 and later, `noatime` on the data volume.
    If antivirus or EDR software is ever installed, exclude the MongoDB data and log paths [6].
-7. **Kernel (m1-058, D-DB-16, not decided).** MongoDB 8.0 refuses to start on Linux kernels 6.19 to
-   7.0.13. Check `uname -r` before the first start and before each reboot onto a new kernel, and do not
-   move to a newer kernel series without checking it against MongoDB's production notes. Not yet tested
-   on a server.
+7. **Kernel (D-DB-16, decided m1-059: stay on 6.8).** MongoDB 8.0.34 refuses Linux kernels 6.19 to
+   7.0.13, and on Ubuntu it also refuses the `7.0.0-<ABI>` kernels until 8.0.37. Ubuntu 24.04's HWE kernel
+   and its `linux-oracle` and `linux-azure` metapackages now install 7.0. Keep the 6.8 kernel line:
+   `linux-generic` or `linux-virtual` on a plain VM, `linux-oracle-lts-24.04` on OCI. Do not install a
+   `*-hwe-24.04` kernel. Before the first start and before each reboot, check that `uname -r` and the
+   newest kernel in `dpkg -l 'linux-image-*' | grep ^ii` both start with `6.8.`. Moving to 7.0 is its own
+   approved task, after 8.0.37 is pinned and tested
+   ([m1-059 paper](../milestones/m1-059-server-kernel.md)). Not yet tested on a server.
 
 ## 5. Disk encryption (data at rest)
 
