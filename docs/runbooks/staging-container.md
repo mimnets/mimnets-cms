@@ -5,7 +5,7 @@
 | **Status** | **Draft; built and run on the owner's PC (`amd64`) and on a hosted GitHub runner (`arm64`) only** (`m1-055` to `m1-058`, agent-executed): see §8 for what was run and what was not. Not run on a server. Running it on a server needs the owner's approval (D-DB-2, D-DB-3, D-DB-7 and the server task) |
 | **Purpose** | The staging version of the one-container image (ADR-0004 Decision 2, D-DB-10 (b)): app and MongoDB 8.0.34 in one container with TLS, member authentication, PBM, no demo content and no default password; nginx and certbot in their own containers |
 | **Not for** | Production as it stands: production needs x.509 member authentication (hardening runbook §12 choice 2), the S3 backup storage (D-DB-12) and `APOS_ALLOW_INDEXING=1` |
-| **Files** | [`docker/staging/`](../../docker/staging/): `compose.yaml`, `compose.npm.yaml` (§9), `Dockerfile`, `entrypoint.sh`, `run-as.sh`, `mongod.conf`, `pbm-config.yaml`, `pbmc.sh`, `nginx/`, `certbot/` |
+| **Files** | [`docker/staging/`](../../docker/staging/): `compose.yaml`, `compose.npm.yaml` (§9), `Dockerfile`, `entrypoint.sh`, `run-as.sh`, `mongod.conf`, `pbm-config.yaml`, `pbmc.sh`, `host-facts.sh` (§9.1), `npm-setup.sh` (§9.2), `nginx/`, `certbot/` |
 | **Related** | [hardening runbook](./server-hardening-and-patching.md) §6–§8 · [PBM runbook](./pbm-backup-and-restore.md) · [HTTP security and HTTPS proxy](./security-configuration.md) · [demo container](./docker-single-container.md) · [m1-054 cluster results](../milestones/m1-054-cluster-mode-results.md) |
 
 ## 1. Layout
@@ -253,22 +253,18 @@ another service uses: pointing it at the test server takes that service down.
 **B. Read-only facts from the server**
 
 Connect as usual (`ssh -i <key> ubuntu@<server-address>`; `ubuntu` is the default user on OCI's Ubuntu
-images), paste the block, and send the output, with anything sensitive replaced (for example the
-public address as `x.x.x.x`). `sudo` may ask for a password.
+images). The commands are in [`docker/staging/host-facts.sh`](../../docker/staging/host-facts.sh), which
+only reads. From the repository clone (for example `/home/ubuntu/vcl-assurer-group`):
 
 ```sh
-{
-echo "== kernel and OS";  uname -r; uname -m; head -4 /etc/os-release
-echo "== kernel packages"; dpkg -l 'linux-image-*' 'linux-oracle*' 'linux-generic*' 2>/dev/null | grep ^ii
-echo "== docker";         docker version --format '{{.Server.Version}}'; docker compose version
-echo "== daemon.json";    cat /etc/docker/daemon.json 2>/dev/null || echo "(no daemon.json)"
-echo "== containers";     docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Ports}}'
-echo "== networks";       docker network ls
-echo "== ports 80/81/443"; sudo ss -tlnp | grep -E ':(80|81|443)\b'
-echo "== ipv6";           ip -6 addr show scope global
-echo "== disk and memory"; df -h /; free -m
-} 2>&1 | tee ~/m1-063-phase0.txt
+cd /home/ubuntu/vcl-assurer-group
+git pull                                 # gets the script if the clone is older
+bash docker/staging/host-facts.sh        # sudo may ask for a password
 ```
+
+It prints the facts and saves a copy to `~/assurer-host-facts.txt`, in the home folder, outside the
+clone, so it cannot be committed. Send the output with anything sensitive replaced (for example the
+public address as `x.x.x.x`). The file is server output: never add it to the repository.
 
 What the output decides, before anything on the server changes:
 
@@ -278,3 +274,47 @@ What the output decides, before anything on the server changes:
 | Compose | 2.24 or later (`ports: !reset`) | older: nginx would publish 80 and 443 next to NPM |
 | Userland proxy | recorded: whether `ss` shows NPM's ports held by `docker-proxy`; §6 check 3 decides whether the visitor's address survives | — |
 | Space | enough disk and memory for the images and MongoDB | — |
+
+### 9.2 Ready-made setup on a shared host, settings later (m1-063)
+
+The owner's route (m1-063): start the stack now with one script, and add the domain, Cloudflare and
+NPM later. The script never touches NPM or another container, so the site stays private until the
+"Later" steps. [`docker/staging/npm-setup.sh`](../../docker/staging/npm-setup.sh) is safe to run again.
+
+**Now** (as root, in the clone, on the branch or `main` that carries the script):
+
+```sh
+cd /home/ubuntu/vcl-assurer-group
+git pull
+bash docker/staging/npm-setup.sh
+```
+
+It stops, before changing anything, if the kernel is not on the 6.8 line (D-DB-16), if Compose is
+older than 2.24, or if a standalone stack is there. Then it:
+
+1. creates the `assurer-npm` network (`172.30.56.0/24`, internal) if missing, or checks the existing one;
+2. writes `docker/staging/.env` (git-ignored, mode `0600`) once, with the placeholder domain
+   `assurer.invalid` and NPM's address `172.30.56.2`; it never overwrites the file;
+3. checks that the stack publishes no host port, builds the images and starts the stack;
+4. waits up to 10 minutes for a 200 from the site on nginx's internal port 8080, and prints how to
+   read the first admin password (§3).
+
+**Later, when the domain is chosen** (each step the owner's, with the owner's approval):
+
+1. Cloudflare record for the host name, **DNS only** (§9.1 A).
+2. NPM joins `assurer-npm` at `172.30.56.2`, with `IP_RANGES_FETCH_ENABLED=false` and port 81 on
+   `127.0.0.1` only (§9 owner's step 2). When NPM is a Portainer stack, make the change in Portainer
+   (**Stacks →** the stack **→ Editor → Update the stack**), not in the file on disk. Updating
+   recreates NPM: every site behind it is down for a moment. First copy the stack text and back up
+   NPM's `data` folder and certificates.
+3. Set the domain; this recreates `site` and `nginx`:
+   `bash docker/staging/npm-setup.sh --domain <host name>`
+4. NPM proxy host for the host name (§9 owner's step 3), Let's Encrypt staging certificate first.
+5. The checks after a start (§9) and m1-061 paper §6.
+
+**Production on this host.** The owner decided on 2026-11-10 (m1-063) that production may also run on
+the OCI server first and move to another server later (D-DB-17, amended). This stack is the
+staging build. Before real visitors use it as production, at least: x.509 member authentication
+(hardening runbook §12 choice 2); backups off the server (D-DB-12, PBM S3); `APOS_ALLOW_INDEXING=1`;
+HSTS raised (§2); SMTP in `site.env`; a restore drill on a copy; the per-visitor checks of paper §6
+passed with NPM. Each is its own approved task.
