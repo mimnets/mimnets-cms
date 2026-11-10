@@ -223,3 +223,58 @@ NPM's Let's Encrypt one; `Strict-Transport-Security` appears once; nginx's log
 (`$S logs nginx`) shows the visitor's real address, not a `172.x` one, also with a forged
 `X-Real-IP: 203.0.113.9` header. A `172.x` address there means Docker's userland proxy is in front of
 NPM, and the per-visitor limits do not work: stop and resolve that first.
+
+### 9.1 Before a test on a shared host (owner's steps)
+
+Added in `m1-063` for the disposable test on the owner's OCI server (m1-061 paper §6). Both steps
+change nothing on the server. Not yet run as written; m1-063 records the result.
+
+**A throwaway name.** The test uses a new subdomain made only for it and deleted afterwards, such as
+`m1-063-test.example.com`. Never use the bare domain, `www`, or any name the WordPress site, email or
+another service uses: pointing it at the test server takes that service down.
+
+**A. The DNS record in Cloudflare**
+
+1. Sign in at `https://dash.cloudflare.com` and open the domain, then **DNS → Records**.
+2. Check that no existing record has the chosen name. If one does, pick another name.
+3. **+ Add record**: **Type** `A`; **Name** the subdomain part only (`m1-063-test`); **IPv4 address**
+   the server's public IPv4 (OCI Console: **Compute → Instances →** the instance **→ Public IP
+   address**); **Proxy status** **DNS only** (grey cloud); **TTL** `Auto`; **Comment**
+   `disposable test, delete after test`. **Save**.
+4. **DNS only is required.** With the orange cloud (Proxied), NPM sees Cloudflare's addresses, not the
+   visitor's: §6 checks 3 to 5 then test Cloudflare, and every visitor shares one rate-limit bucket.
+   nginx trusts NPM's address only. Running behind Cloudflare's proxy needs its own design.
+5. No AAAA record unless the server has a public IPv6 address.
+6. Check from the PC (PowerShell): `Resolve-DnsName m1-063-test.example.com -Type A`. The answer is the
+   server's address. A proxied record usually answers from `104.16.0.0/13` or `172.64.0.0/13` (full list:
+   `https://www.cloudflare.com/ips/`): the cloud is still orange.
+7. At clean-up, delete the record.
+
+**B. Read-only facts from the server**
+
+Connect as usual (`ssh -i <key> ubuntu@<server-address>`; `ubuntu` is the default user on OCI's Ubuntu
+images), paste the block, and send the output, with anything sensitive replaced (for example the
+public address as `x.x.x.x`). `sudo` may ask for a password.
+
+```sh
+{
+echo "== kernel and OS";  uname -r; uname -m; head -4 /etc/os-release
+echo "== kernel packages"; dpkg -l 'linux-image-*' 'linux-oracle*' 'linux-generic*' 2>/dev/null | grep ^ii
+echo "== docker";         docker version --format '{{.Server.Version}}'; docker compose version
+echo "== daemon.json";    cat /etc/docker/daemon.json 2>/dev/null || echo "(no daemon.json)"
+echo "== containers";     docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Ports}}'
+echo "== networks";       docker network ls
+echo "== ports 80/81/443"; sudo ss -tlnp | grep -E ':(80|81|443)\b'
+echo "== ipv6";           ip -6 addr show scope global
+echo "== disk and memory"; df -h /; free -m
+} 2>&1 | tee ~/m1-063-phase0.txt
+```
+
+What the output decides, before anything on the server changes:
+
+| Check | Go | Stop |
+|---|---|---|
+| Kernel (D-DB-16) | `uname -r` starts with `6.8.` | anything else: MongoDB 8.0.34 may refuse to start |
+| Compose | 2.24 or later (`ports: !reset`) | older: nginx would publish 80 and 443 next to NPM |
+| Userland proxy | recorded: whether `ss` shows NPM's ports held by `docker-proxy`; §6 check 3 decides whether the visitor's address survives | — |
+| Space | enough disk and memory for the images and MongoDB | — |
