@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| **Status** | **Draft; built and run on the owner's PC (`amd64`) and on a hosted GitHub runner (`arm64`) only** (`m1-055` to `m1-058`, agent-executed): see §8 for what was run and what was not. **m1-063: started in NPM mode on the owner's OCI server (`arm64`, Ubuntu 22.04, kernel 6.8) with §9.2's script, private (no domain, NPM not joined)**; not yet reached through NPM. Running it on a server needs the owner's approval (D-DB-2, D-DB-3, D-DB-7 and the server task) |
+| **Status** | **Draft; built and run on the owner's PC (`amd64`) and on a hosted GitHub runner (`arm64`) only** (`m1-055` to `m1-058`, agent-executed): see §8 for what was run and what was not. **m1-063: started in NPM mode on the owner's OCI server (`arm64`, Ubuntu 22.04, kernel 6.8) with §9.2's script, private (no domain, NPM not joined)**; not yet reached through NPM. **m1-064: the interactive installer (§10), tested locally only.** Running it on a server needs the owner's approval (D-DB-2, D-DB-3, D-DB-7 and the server task) |
 | **Purpose** | The staging version of the one-container image (ADR-0004 Decision 2, D-DB-10 (b)): app and MongoDB 8.0.34 in one container with TLS, member authentication, PBM, no demo content and no default password; nginx and certbot in their own containers |
 | **Not for** | Production as it stands: production needs x.509 member authentication (hardening runbook §12 choice 2), the S3 backup storage (D-DB-12) and `APOS_ALLOW_INDEXING=1` |
-| **Files** | [`docker/staging/`](../../docker/staging/): `compose.yaml`, `compose.npm.yaml` (§9), `Dockerfile`, `entrypoint.sh`, `run-as.sh`, `mongod.conf`, `pbm-config.yaml`, `pbmc.sh`, `host-facts.sh` (§9.1), `npm-setup.sh` (§9.2), `nginx/`, `certbot/` |
+| **Files** | [`docker/staging/`](../../docker/staging/): `compose.yaml`, `compose.npm.yaml` (§9), `Dockerfile`, `entrypoint.sh`, `run-as.sh`, `mongod.conf`, `pbm-config.yaml`, `pbmc.sh`, `host-facts.sh` (§9.1), `npm-setup.sh` (§9.2), `install.sh` (§10), `nginx/`, `certbot/` |
 | **Related** | [hardening runbook](./server-hardening-and-patching.md) §6–§8 · [PBM runbook](./pbm-backup-and-restore.md) · [HTTP security and HTTPS proxy](./security-configuration.md) · [demo container](./docker-single-container.md) · [m1-054 cluster results](../milestones/m1-054-cluster-mode-results.md) |
 
 ## 1. Layout
@@ -160,6 +160,7 @@ project on `127.0.0.1`. Full results: [m1-055 report](../engineering/reports/202
 | Docker Scout scan of the three `arm64` images (artifact of that workflow), critical and high | PASS (`m1-060`): site 6 high, nginx 1, certbot 13, no critical; the same findings as `amd64` |
 | A real Let's Encrypt certificate, first issuance and renewal; a server; §6 rotation | NOT TESTED |
 | NPM mode (§9) on `amd64`, behind a throwaway nginx stand-in for NPM, visitors on a non-private test subnet: no host port; visitor address in nginx's log and the app's `req.ip`; spoofed `X-Real-IP` and `X-Forwarded-For` ignored; a rogue sender on the NPM network not trusted; other host names 444; rate limit and form limit per visitor; HSTS once; `Secure` cookie; 413 at 34 MB; 5 MB SHA-256 identical; Chrome as an editor (login, edit, draft hidden, publish, media upload); standalone mode unchanged | PASS (`m1-062`). **Not tested with NPM itself, on a server, over IPv6, or with a real certificate** |
+| `install.sh` (§10) on `amd64` (Git Bash, Docker Desktop), disposable projects on `127.0.0.1`, the kernel and terminal checks changed only in a temporary copy: route A through steps 0 to 8 and again over the running stack; route B through `npm-setup.sh` and step 7 against a throwaway nginx standing in for NPM (not joined, then joined); `--step`, `--check` with and without a terminal, quitting, end of input, a bad domain, a busy port, settings without a route; HTTPS 200, redirect, HSTS once, `Secure` cookie, 413, PBM; the forged `X-Real-IP` ignored | PASS (`m1-064`). **Not tested: a server, NPM itself, Let's Encrypt (both routes), the NPM backup's mode check (NTFS), Cloudflare** |
 
 ## 9. NPM mode (shared host, D-DB-17 option B)
 
@@ -312,6 +313,7 @@ older than 2.24, or if a standalone stack is there. Then it:
 3. Set the domain; this recreates `site` and `nginx`:
    `bash docker/staging/npm-setup.sh --domain <host name>`
 4. NPM proxy host for the host name (§9 owner's step 3), Let's Encrypt staging certificate first.
+   Corrected in m1-064: NPM has no staging certificate per proxy host, so it is the real one (§10).
 5. The checks after a start (§9) and m1-061 paper §6.
 
 **Production on this host.** The owner decided on 2026-11-10 (m1-063) that production may also run on
@@ -355,3 +357,63 @@ docker network ls --format '{{.Name}}' | grep assurer
 If NPM was never changed, its backup from §9.2 is no longer needed and holds private keys:
 `rm -rf /root/npm-backup-m1-063 /root/npm-backup-m1-063.tar.gz`. The Cloudflare record can stay
 for a later run or be deleted (§9.1 A step 7).
+
+## 10. Interactive install (m1-064)
+
+One script for a server: it builds and starts the stack, checks it, then guides the owner one step at
+a time through the public address, the domain, the certificate and the final checks. Design and
+decision: [m1-064 paper](../milestones/m1-064-installer-design.md) (D-DB-18). Tested locally only
+(§8); not yet run on a server.
+
+**What it changes.** Only this stack: `docker/staging/.env`, the `assurer-npm` network, the images,
+the containers and, in route A, certbot in the stack's own container. For NPM, Portainer, Cloudflare,
+the OCI console and the firewall it shows the exact command or setting and waits; the owner makes
+each of those changes. It never reads or prints the admin password.
+
+**Run it** as root, from the clone of `main`, in an SSH session (it reads answers from the terminal):
+
+```sh
+cd /home/ubuntu/vcl-assurer-group
+git pull
+bash docker/staging/install.sh              # all steps
+bash docker/staging/install.sh --step 6     # start at one step (0 to 9)
+bash docker/staging/install.sh --check      # the final checks only (also without a terminal)
+```
+
+At each prompt: `[r]un` (a command on the stack), `[d]one` (the owner made the shown change), `[s]kip`,
+`[t]ry` a failed check again, or `[q]uit`. `Ctrl-D` also quits. Every quit prints the summary so far.
+Everything on screen also goes to `~/assurer-install-<date>-<time>.log` (mode `0600`, outside the
+clone). Keep the log off the repository; it holds the host name and the public address.
+
+**Running it again is safe.** It keeps no state file. A route already in `.env` is kept (settings
+written by hand as in §3 count as route A, settings from `npm-setup.sh` as route B), so the script
+never switches a stack with content between routes. Existing settings are kept; only step 6 changes
+the domain. A real certificate already in place skips step 7.
+
+| Step | Route A, standalone (D-DB-17 A) | Route B, behind NPM (D-DB-17 B, §9) |
+|---|---|---|
+| 0 Host checks, read-only | Stops if the kernel is not on the 6.8 line (D-DB-16) or Compose is older than 2.24. Warns on the branch, local changes, an older clone and under 15 GB free disk. Shows ports 80, 81 and 443, NPM and existing `assurer` containers | same |
+| 1 Route | Recommended when ports 80 and 443 are free and no NPM runs | Recommended when NPM runs. If something else owns 80 or 443, the script stops |
+| 2 Settings | Writes `.env` once (mode `0600`): domain (Enter keeps the placeholder `assurer.invalid` until step 6), web processes, MongoDB cache (§2) | same, plus `ASSURER_UPSTREAM_PROXY_IP=172.30.56.2` |
+| 3 Build and start | `$S build`, `$S up -d`, waits for a 200 | runs `npm-setup.sh` (§9.2) |
+| 4 Check on the server | HTTPS 200 and HTTP 301 through the stack's nginx; shows the first admin login (§3) | 200 on nginx's port 8080; same login text |
+| 5 Public address | From the PC with `curl.exe --resolve`; if it fails, the OCI security list path and `iptables -S DOCKER-USER` (read-only) | does not apply: nothing is published |
+| 6 Domain and Cloudflare | Sets the domain in `.env`, `up -d`; shows the Cloudflare record (§9.1 A, **DNS only**); checks the DNS answer, and names a Cloudflare address as an orange cloud | `npm-setup.sh --domain`; the same record and check |
+| 7 Certificate | certbot as in §3: `--test-cert` first, then the real certificate with `--force-renewal`, `nginx -s reload`; checks the issuer | (a) NPM backup commands, after showing NPM's mounts; (b) the lines for NPM's stack in Portainer; (c) the proxy-host settings (§9 owner's step 3). The script checks: NPM on `assurer-npm` at `172.30.56.2`, nothing else there, `IP_RANGES_FETCH_ENABLED=false`, port 81 on `127.0.0.1` only, then 200, a redirect and a Let's Encrypt issuer |
+| 8 Final checks | From the server: redirect, 200, real certificate, HSTS once, no `Server` version, `Secure` cookie, 413 at 34 MB, `pbmc status`. From the PC, two `curl.exe` requests with random markers: the script finds them in nginx's log; the logged address must be the PC's, not a private one, and a forged `X-Real-IP` must be ignored. Per-visitor 429 is listed as manual (two outside addresses) | same, plus `Test-NetConnection <ip> -Port 81` from the PC (must be `False`) |
+| 9 Summary | PASS, FAIL, SKIPPED, NOT TESTED and MANUAL per check, the production items still open (§9.2) and the log's path | same |
+
+**Certificates.**
+
+- Route A: certbot replaces a staging certificate with a real one when `--force-renewal` is given
+  (certbot needs `--break-my-certs` only for the opposite direction). Not run against Let's Encrypt:
+  it needs a public host name.
+- Route B: **NPM has no staging certificate per proxy host.** NPM 2.15.1 reads one setting,
+  `LE_STAGING`, for the whole container (`backend/lib/config.js`), which would move every site behind
+  NPM to staging certificates. So step 7(c) requests the real certificate directly. Check the DNS
+  record first (step 6): Let's Encrypt allows 5 failed validations per host name per hour. This
+  replaces "Let's Encrypt staging certificate first" in §9.2 step 4 for NPM.
+
+**Not covered:** route A on a real server; IPv6; Cloudflare's proxy (orange cloud), which needs its
+own design (§9.1 A, point 4); Chrome as an editor through the public host name (the agent runs it with
+the owner's approval). The script makes nothing production-ready: step 9 lists what is still open.
