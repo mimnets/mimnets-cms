@@ -5,7 +5,7 @@
 | **Status** | **Draft; built and run on the owner's PC (`amd64`) and on a hosted GitHub runner (`arm64`) only** (`m1-055` to `m1-058`, agent-executed): see §8 for what was run and what was not. Not run on a server. Running it on a server needs the owner's approval (D-DB-2, D-DB-3, D-DB-7 and the server task) |
 | **Purpose** | The staging version of the one-container image (ADR-0004 Decision 2, D-DB-10 (b)): app and MongoDB 8.0.34 in one container with TLS, member authentication, PBM, no demo content and no default password; nginx and certbot in their own containers |
 | **Not for** | Production as it stands: production needs x.509 member authentication (hardening runbook §12 choice 2), the S3 backup storage (D-DB-12) and `APOS_ALLOW_INDEXING=1` |
-| **Files** | [`docker/staging/`](../../docker/staging/): `compose.yaml`, `compose.npm.yaml` (§9), `Dockerfile`, `entrypoint.sh`, `run-as.sh`, `mongod.conf`, `pbm-config.yaml`, `pbmc.sh`, `nginx/`, `certbot/` |
+| **Files** | [`docker/staging/`](../../docker/staging/): `compose.yaml`, `compose.npm.yaml` (§9), `Dockerfile`, `entrypoint.sh`, `run-as.sh`, `mongod.conf`, `pbm-config.yaml`, `pbmc.sh`, `host-facts.sh` (§9.1), `nginx/`, `certbot/` |
 | **Related** | [hardening runbook](./server-hardening-and-patching.md) §6–§8 · [PBM runbook](./pbm-backup-and-restore.md) · [HTTP security and HTTPS proxy](./security-configuration.md) · [demo container](./docker-single-container.md) · [m1-054 cluster results](../milestones/m1-054-cluster-mode-results.md) |
 
 ## 1. Layout
@@ -253,22 +253,18 @@ another service uses: pointing it at the test server takes that service down.
 **B. Read-only facts from the server**
 
 Connect as usual (`ssh -i <key> ubuntu@<server-address>`; `ubuntu` is the default user on OCI's Ubuntu
-images), paste the block, and send the output, with anything sensitive replaced (for example the
-public address as `x.x.x.x`). `sudo` may ask for a password.
+images). The commands are in [`docker/staging/host-facts.sh`](../../docker/staging/host-facts.sh), which
+only reads. From the repository clone (for example `/home/ubuntu/vcl-assurer-group`):
 
 ```sh
-{
-echo "== kernel and OS";  uname -r; uname -m; head -4 /etc/os-release
-echo "== kernel packages"; dpkg -l 'linux-image-*' 'linux-oracle*' 'linux-generic*' 2>/dev/null | grep ^ii
-echo "== docker";         docker version --format '{{.Server.Version}}'; docker compose version
-echo "== daemon.json";    cat /etc/docker/daemon.json 2>/dev/null || echo "(no daemon.json)"
-echo "== containers";     docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Ports}}'
-echo "== networks";       docker network ls
-echo "== ports 80/81/443"; sudo ss -tlnp | grep -E ':(80|81|443)\b'
-echo "== ipv6";           ip -6 addr show scope global
-echo "== disk and memory"; df -h /; free -m
-} 2>&1 | tee ~/m1-063-phase0.txt
+cd /home/ubuntu/vcl-assurer-group
+git pull                                 # gets the script if the clone is older
+bash docker/staging/host-facts.sh        # sudo may ask for a password
 ```
+
+It prints the facts and saves a copy to `~/assurer-host-facts.txt`, in the home folder, outside the
+clone, so it cannot be committed. Send the output with anything sensitive replaced (for example the
+public address as `x.x.x.x`). The file is server output: never add it to the repository.
 
 What the output decides, before anything on the server changes:
 
