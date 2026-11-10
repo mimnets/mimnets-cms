@@ -13,8 +13,8 @@
 
 - **The test stack on the owner's OCI server** (`assurer-staging`, NPM mode, `arm64`, Ubuntu 22.04,
   kernel `6.8.0-1049-oracle`) ran healthy and private. At the end of m1-063 the owner chose to remove it
-  (runbook §9.3). **First confirm on the server that it is gone** (§9.3 step 6) and that the NPM backup
-  with private keys is deleted. After the merge, the owner switches the clone to `main`
+  (runbook §9.3); the owner reported "all clear" (stack, network, images, `.env` and the NPM backup
+  removed). The server may hold two clones of the repository; keep one. After the merge, the owner switches the clone to `main`
   (`git switch main && git pull`).
 - **Not done:** NPM's changes (join `assurer-npm` at
   `172.30.56.2`, `IP_RANGES_FETCH_ENABLED=false`, port 81 on `127.0.0.1`), the proxy host, and paper §6
