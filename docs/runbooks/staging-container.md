@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | **Draft; built and run on the owner's PC (`amd64`) and on a hosted GitHub runner (`arm64`) only** (`m1-055` to `m1-058`, agent-executed): see §8 for what was run and what was not. Not run on a server. Running it on a server needs the owner's approval (D-DB-2, D-DB-3, D-DB-7 and the server task) |
+| **Status** | **Draft; built and run on the owner's PC (`amd64`) and on a hosted GitHub runner (`arm64`) only** (`m1-055` to `m1-058`, agent-executed): see §8 for what was run and what was not. **m1-063: started in NPM mode on the owner's OCI server (`arm64`, Ubuntu 22.04, kernel 6.8) with §9.2's script, private (no domain, NPM not joined)**; not yet reached through NPM. Running it on a server needs the owner's approval (D-DB-2, D-DB-3, D-DB-7 and the server task) |
 | **Purpose** | The staging version of the one-container image (ADR-0004 Decision 2, D-DB-10 (b)): app and MongoDB 8.0.34 in one container with TLS, member authentication, PBM, no demo content and no default password; nginx and certbot in their own containers |
 | **Not for** | Production as it stands: production needs x.509 member authentication (hardening runbook §12 choice 2), the S3 backup storage (D-DB-12) and `APOS_ALLOW_INDEXING=1` |
 | **Files** | [`docker/staging/`](../../docker/staging/): `compose.yaml`, `compose.npm.yaml` (§9), `Dockerfile`, `entrypoint.sh`, `run-as.sh`, `mongod.conf`, `pbm-config.yaml`, `pbmc.sh`, `host-facts.sh` (§9.1), `npm-setup.sh` (§9.2), `nginx/`, `certbot/` |
@@ -164,9 +164,11 @@ project on `127.0.0.1`. Full results: [m1-055 report](../engineering/reports/202
 ## 9. NPM mode (shared host, D-DB-17 option B)
 
 For a host where Nginx Proxy Manager (NPM) already owns ports 80 and 443, such as the owner's OCI
-server. Real staging and production use the standalone mode above (D-DB-17 option A). Design:
+server. Real staging and production use the standalone mode above (D-DB-17 option A); amended in
+`m1-063`: production may run on the OCI server first (§9.2). Design:
 [m1-061 paper](../milestones/m1-061-npm-proxy-design.md) §4. Built and tested locally in `m1-062`
-against a stand-in for NPM, not against NPM itself (§8).
+against a stand-in for NPM, not against NPM itself (§8). Started on the owner's OCI server in `m1-063`
+(§9.2), not yet behind NPM.
 
 ```
  Internet ──► :80/:443 NPM ──assurer-npm (172.30.56.0/24)──► nginx :8080 ──edge──► site:3000
@@ -318,3 +320,38 @@ staging build. Before real visitors use it as production, at least: x.509 member
 (hardening runbook §12 choice 2); backups off the server (D-DB-12, PBM S3); `APOS_ALLOW_INDEXING=1`;
 HSTS raised (§2); SMTP in `site.env`; a restore drill on a copy; the per-visitor checks of paper §6
 passed with NPM. Each is its own approved task.
+
+### 9.3 Removing a test stack from a shared host (m1-063)
+
+For a disposable test only. `down -v` **deletes the stack's database, media, secrets and backups for
+good**; never run it on a stack with content to keep. NPM, Portainer and other containers are not
+touched. As root, in the clone:
+
+```sh
+cd /home/ubuntu/vcl-assurer-group
+S="docker compose -f docker/staging/compose.yaml -f docker/staging/compose.npm.yaml"
+
+# 1. Look first: what will go
+$S ps -a
+docker volume ls --format '{{.Name}}' | grep -E '^(assurer-staging|assurer)_'
+docker image ls --format '{{.Repository}}:{{.Tag}}  {{.Size}}' | grep '^assurer-'
+
+# 2. The test stack: containers, its networks and volumes
+$S down -v --remove-orphans
+# 3. The demo container's volumes, if `docker compose up -d` was run in the clone
+docker compose down -v
+# 4. The shared network (only after the stack is down; NPM must not be joined to it)
+docker network rm assurer-npm
+# 5. The images (frees several GB) and the settings file
+docker image rm $(docker image ls --format '{{.Repository}}:{{.Tag}}' | grep '^assurer-')
+rm -f docker/staging/.env
+
+# 6. Check: no output from these three
+docker ps -a --format '{{.Names}}' | grep assurer
+docker volume ls --format '{{.Name}}' | grep -E '^(assurer-staging|assurer)_'
+docker network ls --format '{{.Name}}' | grep assurer
+```
+
+If NPM was never changed, its backup from §9.2 is no longer needed and holds private keys:
+`rm -rf /root/npm-backup-m1-063 /root/npm-backup-m1-063.tar.gz`. The Cloudflare record can stay
+for a later run or be deleted (§9.1 A step 7).
