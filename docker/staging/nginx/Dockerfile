@@ -10,3 +10,7 @@ RUN apk add --no-cache --upgrade 'zlib>=1.4-r0' \
   && rm /etc/nginx/conf.d/default.conf
 COPY nginx/assurer.conf.template /etc/nginx/templates/assurer.conf.template
 COPY --chmod=755 nginx/40-assurer-reload.sh /docker-entrypoint.d/40-assurer-reload.sh
+# NPM mode (m1-062): outside templates/, so it is rendered only when
+# 35-assurer-npm.sh finds ASSURER_UPSTREAM_PROXY_IP set.
+COPY nginx/assurer-npm.conf.template /etc/nginx/assurer-npm/assurer-npm.conf.template
+COPY --chmod=755 nginx/35-assurer-npm.sh /docker-entrypoint.d/35-assurer-npm.sh
