@@ -149,3 +149,13 @@ directory, ports, volumes), and each push is tried up to 3 times.
 | certbot: 2 layers of our own; `certbot --version` 5.9.0; `certbot renew` with no certificate | PASS |
 | Docker Scout: nginx 0 critical, 1 high; certbot 0 critical, 13 high | Unchanged |
 | The push to `ghcr.io` | NOT TESTED: runs on the merge to `main` |
+
+## End of day (2026-11-11, 13:00 UTC)
+
+- The release run for `ea9c81d` passed: all four images on `ghcr.io` for `amd64` and `arm64`, tag
+  `ea9c81df00dd3d227fa42d8b8c63adba45cf6d58`. Runbook §12.3 fixed (PR #83, D-GIT-74).
+- **The PITR restore drill hangs on `arm64` in CI**: both `staging-arm64` PR runs stayed in "PITR
+  restore into new, empty containers" (from 12:30 and 12:52 UTC). Cause not known; the next task
+  ([m1-069 handoff](../../../../milestones/m1-069-handoff.md)).
+- The server switch (runbook §12.3) had not been reported as run.
+
