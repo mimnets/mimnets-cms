@@ -3,7 +3,8 @@
 # D-DB-17 option B; runbook docs/runbooks/staging-container.md §9.2). Safe to
 # run again. It never touches NPM, its stack or any other container: the site
 # stays private until the owner joins NPM to the network and adds the proxy
-# host (§9.2, "Later"). Usage, as root or a docker user, from anywhere:
+# host (§9.2, "Later"). The images come from ghcr.io for the clone's commit
+# (deploy.sh --here, m1-068). Usage, as root or a docker user, from anywhere:
 #   bash docker/staging/npm-setup.sh                      # first start, placeholder domain
 #   bash docker/staging/npm-setup.sh --domain www.example.org   # set or change the domain
 set -euo pipefail
@@ -42,7 +43,7 @@ if [ "$major" -lt 2 ] || { [ "$major" -eq 2 ] && [ "$minor" -lt 24 ]; }; then
   die "Compose $compose is older than 2.24 and cannot apply 'ports: !reset'"
 fi
 say "Compose $compose, $(uname -m)"
-if docker ps -a --format '{{.Names}}' | grep -qx 'assurer-staging-certbot-1'; then
+if docker ps -a --format '{{.Names}}' | grep -qxE '(assurer-staging|mimnets-cms)-certbot-1'; then
   die "a standalone stack is here (certbot container); see runbook §9 before switching"
 fi
 
@@ -65,6 +66,7 @@ set_key() {
 if [ ! -f "$ENV_FILE" ]; then
   (umask 077; cat > "$ENV_FILE" <<EOF
 # Written by npm-setup.sh (m1-063). Settings: runbook staging-container.md §2 and §9.
+ASSURER_PROXY_MODE=npm
 ASSURER_DOMAIN=$PLACEHOLDER
 APOS_BASE_URL=https://$PLACEHOLDER
 ASSURER_UPSTREAM_PROXY_IP=$NPM_IP
@@ -75,6 +77,7 @@ EOF
   say "settings written to $ENV_FILE"
 fi
 chmod 600 "$ENV_FILE"
+set_key ASSURER_PROXY_MODE npm
 if [ -n "$domain" ]; then
   set_key ASSURER_DOMAIN "$domain"
   set_key APOS_BASE_URL "https://$domain"
@@ -85,11 +88,8 @@ current=$(sed -n 's/^ASSURER_DOMAIN=//p' "$ENV_FILE")
 [ "$("${S[@]}" config | grep -c 'published:')" -eq 0 ] \
   || die "the stack would publish host ports; check compose.npm.yaml"
 
-# 4. Build and start. The first build takes a while.
-say "building the images"
-"${S[@]}" build
-say "starting the stack"
-"${S[@]}" up -d
+# 4. Pull and start the clone's release (deploy.sh).
+bash docker/staging/deploy.sh --here
 
 # 5. Wait for the site to answer through nginx's internal port.
 say "waiting for the site (the first start takes a few minutes)"
@@ -100,7 +100,7 @@ for _ in $(seq 1 60); do
   [ "$code" = "200" ] && break
   sleep 10
 done
-[ "$code" = "200" ] || die "no 200 from the site after 10 minutes (last: '${code:-none}'); see: ${S[*]} logs site"
+[ "$code" = "200" ] || die "no 200 from the site after 10 minutes (last: '${code:-none}'); see: ${S[*]} logs app"
 "${S[@]}" logs nginx 2>&1 | grep -m1 'NPM mode' || true
 say "the site answers (200) for $current on nginx's internal port 8080"
 
@@ -108,7 +108,7 @@ cat <<EOF
 
 Done. The site runs, but nobody outside this server can reach it yet.
 - First admin password, from this folder (read once, change it in the admin UI, delete the file):
-    ${S[*]} exec site cat /data/secrets/admin-initial-password
+    ${S[*]} exec app cat /app/data/admin-initial-password
 - Later (runbook staging-container.md §9.2): Cloudflare record, NPM joins $NET at
   $NPM_IP, NPM proxy host to 172.30.56.10:8080, then:
     bash docker/staging/npm-setup.sh --domain <your host name>

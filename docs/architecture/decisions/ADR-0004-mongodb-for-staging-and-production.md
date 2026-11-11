@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | **Accepted** 2026-11-08 (`m1-052`, D-DB-14). Drafted by the agent; the decisions it records were made by the owner in the decision register (D-DB-8, D-DB-9, D-DB-10 (b), D-DB-12, D-DB-13) |
+| **Status** | **Accepted** 2026-11-08 (`m1-052`, D-DB-14). **Amendment 1 (one container per service, m1-068) accepted 2026-11-11 (D-DB-23).** Drafted by the agent; the decisions it records were made by the owner in the decision register (D-DB-8, D-DB-9, D-DB-10 (b), D-DB-12, D-DB-13) |
 | **Date** | 2026-11-08 |
 | **Task** | `m1-052` · report: [`2026-11-08-m1-052-mongodb-reversal-records.report.md`](../../engineering/reports/2026/11/2026-11-08-m1-052-mongodb-reversal-records.report.md) |
 | **Supersedes** | [ADR-0002](./ADR-0002-database-strategy.md) **in part**: Decision item 2 (PostgreSQL for staging and production), §1 (SQLite → PostgreSQL migration), the PostgreSQL rows of §5, §6 and §9 (the PostgreSQL acceptance test), and the "SQLite in production" and "MongoDB everywhere" rows under Alternatives. Everything else in ADR-0002 stays in force |
@@ -94,3 +94,33 @@ Evidence for MongoDB on this project:
 | MongoDB 9.0 | Needs the `mongodb` driver 7.x, which Apostrophe 4.34.0 does not accept (D-DB-9) |
 | Separate containers for the app and MongoDB | The agent's suggestion; the owner chose one container (D-DB-10 (b)) |
 | WAL-G, scheduled `mongodump --oplog`, Ops Manager, disk snapshots | Compared in the [m1-045 options paper](../../milestones/m1-045-backup-tool-options.md); `mongodump --oplog` is the fallback if PBM's S3 tests fail |
+
+## Amendment 1: one container per service (m1-068)
+
+| | |
+|---|---|
+| **Status** | **Accepted** 2026-11-11 (`m1-068`, D-DB-23) by the owner, in session: "Accept (Recommended)". Drafted by the agent; it records D-DB-20, decided by the owner on 2026-11-11 |
+| **Design** | [m1-068 design note](../../milestones/m1-068-release-pipeline-design.md) (D-DB-22, approved by the owner) |
+
+**Decision 2 is replaced by:**
+
+2. **Containers.** Each service runs **in its own container, in one Docker Compose stack** per
+   environment (D-DB-20, replacing D-DB-10 (b)): `app` (Apostrophe in cluster mode), `mongo`
+   (MongoDB 8.0 from the official image, pinned by digest, with TLS and member authentication),
+   `pbm` (pbm-agent), `backup` (the base-backup schedule), `nginx` and `certbot`, plus the one-shot
+   `setup` and `cert-bootstrap` jobs. MongoDB is reached only over an internal network, never on a
+   published port. Each service mounts only its own secrets. The images are built and checked in
+   CI for each commit on `main` and pulled from `ghcr.io` by the server, which never builds
+   (D-DB-21). The demonstration image (D-DB-11) stays one container, for demo and test use only.
+
+**Consequences of the amendment:**
+
+- **Positive:** an app release does not restart MongoDB; each service has its own limits, health
+  check and restart; MongoDB, PBM and the app are updated separately; a release is one commit,
+  and rolling back means starting an earlier one.
+- **Negative:** MongoDB now listens on a container network instead of loopback (internal network,
+  TLS and authentication required). More moving parts: eight services instead of four. A rollback
+  across a new Apostrophe migration needs a PITR restore. The images are stored on GitHub, under
+  the account's package allowance.
+- **Alternatives:** the row "Separate containers for the app and MongoDB" above no longer applies;
+  one container (D-DB-10 (b)) is the replaced option.

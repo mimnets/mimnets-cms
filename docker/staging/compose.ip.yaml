@@ -7,7 +7,7 @@
 # Go-live (same database and media): bash docker/staging/npm-setup.sh --domain <host name>
 # Guide: docs/runbooks/staging-container.md §11.
 services:
-  site:
+  app:
     ports:
       - "${ASSURER_IP_PORT:-8090}:3000"
     environment:

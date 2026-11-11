@@ -6,6 +6,12 @@
 # - Tests run on a fresh SQLite database under RUNNER_TEMP (npm run test:ci).
 # - Third-party actions are pinned to full commit SHAs (version in comment).
 #   Updating a pin is a dependency change and needs approval (AGENTS.md).
+# - release (m1-068, D-DB-21): on a push to main, after every job above
+#   passes, builds the stack's images for amd64 and arm64 on native runners,
+#   starts and checks the stack, then pushes them to ghcr.io (private
+#   packages). Only that job can write packages, with the run's own
+#   GITHUB_TOKEN; no other secret. The <sha> tag is written only when both
+#   architectures pass. Design: docs/milestones/m1-068-release-pipeline-design.md
 name: CI
 
 on:
@@ -137,3 +143,121 @@ jobs:
       # npm audit reads package-lock.json; no install is needed.
       - name: npm audit against security/audit-baseline.json
         run: npm run audit:check
+
+  # Builds, checks and pushes one architecture. MongoDB 8.0 refuses Linux
+  # kernels 6.19 to 7.0.13 (D-DB-16), so both runners are ubuntu-22.04.
+  release:
+    name: release (${{ matrix.arch }})
+    needs: [lint, build, test, secrets, audit]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-22.04
+          - arch: arm64
+            runner: ubuntu-22.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    env:
+      ASSURER_REGISTRY: ghcr.io/mimnets
+      ASSURER_IMAGE_TAG: ${{ github.sha }}-${{ matrix.arch }}
+      APOS_RELEASE_ID: ${{ github.sha }}
+      ASSURER_DOMAIN: localhost
+      APOS_BASE_URL: https://localhost
+      S: docker compose -f docker/staging/compose.yaml -f docker/staging/compose.build.yaml
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build the images
+        run: $S build
+
+      - name: The images are linux/${{ matrix.arch }}
+        run: |
+          for name in app mongo nginx certbot; do
+            arch="$(docker image inspect -f '{{.Architecture}}' "$ASSURER_REGISTRY/assurer-$name:$ASSURER_IMAGE_TAG")"
+            echo "assurer-$name $arch"
+            test "$arch" = "${{ matrix.arch }}"
+          done
+
+      - name: Start the stack
+        run: $S up -d
+
+      - name: The app becomes healthy
+        run: |
+          for _ in $(seq 1 60); do
+            status="$(docker inspect -f '{{.State.Health.Status}}' "$($S ps -q app)")"
+            echo "$status"
+            [ "$status" = healthy ] && exit 0
+            [ "$status" = unhealthy ] && exit 1
+            sleep 5
+          done
+          exit 1
+
+      - name: HTTP redirects to HTTPS, HTTPS answers through nginx
+        run: |
+          curl -sI http://localhost/ | tee headers.txt
+          grep -q '^HTTP/1.1 301' headers.txt
+          curl -skI https://localhost/ | tee headers.txt
+          grep -qE '^HTTP/[0-9.]+ 200' headers.txt
+
+      - name: pbm-agent is running
+        run: |
+          for _ in $(seq 1 24); do
+            $S exec -T pbm pbmc status > pbm.txt 2>&1 && grep -q 'pbm-agent \[v2.17.0\] OK' pbm.txt && exit 0
+            sleep 5
+          done
+          cat pbm.txt
+          exit 1
+
+      - name: Log lines after a failure
+        if: failure()
+        run: |
+          $S ps -a
+          $S logs --tail 80 | grep -F '[assurer' || true
+
+      - name: Remove the stack
+        if: always()
+        run: $S down -v
+
+      - name: Push the images (by architecture)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_ACTOR: ${{ github.actor }}
+        run: |
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
+          for name in app mongo nginx certbot; do
+            docker push --quiet "$ASSURER_REGISTRY/assurer-$name:$ASSURER_IMAGE_TAG"
+          done
+          docker logout ghcr.io
+
+  # Joins the two architectures under the commit's tag, the one deploy.sh pulls.
+  release-tag:
+    name: release-tag
+    needs: [release]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      packages: write
+    env:
+      ASSURER_REGISTRY: ghcr.io/mimnets
+      SHA: ${{ github.sha }}
+    steps:
+      - name: Tag the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_ACTOR: ${{ github.actor }}
+        run: |
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
+          for name in app mongo nginx certbot; do
+            image="$ASSURER_REGISTRY/assurer-$name"
+            docker buildx imagetools create -t "$image:$SHA" "$image:$SHA-amd64" "$image:$SHA-arm64"
+            docker buildx imagetools inspect "$image:$SHA" | grep -E 'Name:|Platform:'
+          done
+          docker logout ghcr.io
+          echo "::notice title=Release::ghcr.io images tagged $SHA; on the server: bash docker/staging/deploy.sh $SHA"

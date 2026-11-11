@@ -1,4 +1,5 @@
-# Staging stack on linux/arm64 (m1-058): builds and starts docker/staging on
+# Staging stack on linux/arm64 (m1-058; one container per service since
+# m1-068, D-DB-20): builds and starts docker/staging on
 # GitHub's native arm64 runner, because the owner's PC has too little memory to
 # build it under emulation. Proves the images build and work on arm64, not a
 # server: the certificate is self-signed and the stack is thrown away.
@@ -41,8 +42,10 @@ jobs:
     env:
       ASSURER_DOMAIN: localhost
       APOS_BASE_URL: https://localhost
-      S: docker compose -f docker/staging/compose.yaml
-      R: docker compose -f docker/staging/compose.yaml --profile restore
+      ASSURER_IMAGE_TAG: ci
+      S: docker compose -f docker/staging/compose.yaml -f docker/staging/compose.build.yaml
+      R: docker compose -f docker/staging/compose.yaml -f docker/staging/compose.build.yaml --profile restore
+      RS: docker compose -f docker/staging/compose.yaml -f docker/staging/compose.build.yaml --profile restore --profile restore-site
       MARKER_SLUG: /m1-060-restore-marker
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -62,7 +65,7 @@ jobs:
 
       - name: All images are linux/arm64
         run: |
-          for image in assurer-site:staging assurer-nginx:staging assurer-certbot:staging; do
+          for image in ghcr.io/mimnets/assurer-{app,mongo,nginx,certbot}:ci; do
             arch="$(docker image inspect -f '{{.Architecture}}' "$image")"
             echo "$image $arch"
             test "$arch" = arm64
@@ -74,8 +77,8 @@ jobs:
       - name: Save the images for the scan
         run: |
           mkdir images
-          for image in assurer-site:staging assurer-nginx:staging assurer-certbot:staging; do
-            docker save -o "images/${image%%:*}.tar" "$image"
+          for name in app mongo nginx certbot; do
+            docker save -o "images/assurer-$name.tar" "ghcr.io/mimnets/assurer-$name:ci"
           done
           ls -l images
 
@@ -89,10 +92,10 @@ jobs:
       - name: Start as the runbook writes it
         run: $S up -d
 
-      - name: Site becomes healthy
+      - name: App becomes healthy
         run: |
           for _ in $(seq 1 60); do
-            status="$(docker inspect -f '{{.State.Health.Status}}' assurer-staging-site-1)"
+            status="$(docker inspect -f '{{.State.Health.Status}}' "$($S ps -q app)")"
             echo "$status"
             [ "$status" = healthy ] && exit 0
             [ "$status" = unhealthy ] && exit 1
@@ -102,9 +105,10 @@ jobs:
 
       - name: apt upgrade is in the image and the removed files are gone
         run: |
-          $S exec -T site dpkg-query -W -f='${Package} ${Version}\n' apt libapt-pkg6.0t64 | tee packages.txt
+          $S exec -T mongo dpkg-query -W -f='${Package} ${Version}\n' apt libapt-pkg6.0t64 | tee packages.txt
           test "$(grep -c ' 2\.8\.4ubuntu0\.1$' packages.txt)" = 2
-          $S exec -T site sh -c 'for f in /usr/local/bin/gosu /opt/js-yaml /app/node_modules/@esbuild; do [ ! -e "$f" ] || exit 1; done'
+          $S exec -T mongo sh -c 'for f in /usr/local/bin/gosu /opt/js-yaml /usr/local/bin/docker-entrypoint.sh; do [ ! -e "$f" ] || exit 1; done'
+          $S exec -T app sh -c 'for f in /app/node_modules/@esbuild /usr/local/lib/node_modules /usr/local/bin/npm; do [ ! -e "$f" ] || exit 1; done'
 
       - name: HTTP redirects to HTTPS
         run: |
@@ -133,16 +137,18 @@ jobs:
       - name: First base backup finishes and PBM is running
         run: |
           for _ in $(seq 1 60); do
-            $S logs site | grep -q '\[assurer\] Base backup finished' && break
+            $S logs backup | grep -q '\[assurer\] Base backup finished' && break
             sleep 5
           done
-          $S logs site | grep -q '\[assurer\] Base backup finished'
-          $S exec -T site pbmc status | tee pbm.txt
+          $S logs backup | grep -q '\[assurer\] Base backup finished'
+          $S exec -T pbm pbmc status | tee pbm.txt
           grep -q 'pbm-agent \[v2.17.0\] OK' pbm.txt
 
-      - name: Site survives a restart
+      # MongoDB too: the app and PBM connect to it again.
+      - name: Stack survives a restart
         run: |
-          $S restart site
+          $S restart mongo
+          $S restart app pbm backup
           for _ in $(seq 1 60); do
             [ "$(curl -sk -o /dev/null -w '%{http_code}' https://localhost/)" = 200 ] && exit 0
             sleep 5
@@ -153,7 +159,7 @@ jobs:
       - name: Accepted upload through nginx is served back complete
         run: |
           set -o pipefail
-          password="$($S exec -T site cat /data/secrets/admin-initial-password)"
+          password="$($S exec -T app cat /app/data/admin-initial-password)"
           echo "::add-mask::$password"
           token="$(jq -n --arg p "$password" '{username: "admin", password: $p}' |
             curl -skf -H 'content-type: application/json' --data-binary @- \
@@ -177,7 +183,7 @@ jobs:
           set -o pipefail
           count=0
           for _ in $(seq 1 60); do
-            count="$($S logs site | grep -cF '[assurer] Base backup finished' || true)"
+            count="$($S logs backup | grep -cF '[assurer] Base backup finished' || true)"
             [ "$count" -ge 2 ] && break
             sleep 5
           done
@@ -200,7 +206,7 @@ jobs:
           marker_time="$(cat marker-time.txt)"
           end=
           for _ in $(seq 1 60); do
-            $S exec -T site pbmc list --out=json > pbm-list.json || true
+            $S exec -T pbm pbmc list --out=json > pbm-list.json || true
             end="$(jq --argjson t "$marker_time" \
               '[.. | objects | select(has("start") and has("end")) | select(.start <= $t and .end >= $t) | .end] | max // empty' \
               pbm-list.json || true)"
@@ -210,26 +216,28 @@ jobs:
           test -n "$end"
           date -u -d "@$end" +%Y-%m-%dT%H:%M:%S | tee restore-time.txt
 
-      # PBM runbook §3 step 2, into the restore container's own, empty volumes.
-      - name: PITR restore into a new, empty container
+      # PBM runbook §3 step 2, into the restore services' own, empty volumes.
+      - name: PITR restore into new, empty containers
         run: |
           date +%s > restore-start.txt
           $R run --rm restore-copy
-          $R up -d --no-deps restore
-          ready=0
+          $R up -d --no-deps restore-mongo
+          status=
           for _ in $(seq 1 60); do
-            ready="$($R logs restore | grep -cF 'Restore mode: MongoDB and pbm-agent only' || true)"
-            [ "$ready" -ge 1 ] && break
+            status="$(docker inspect -f '{{.State.Health.Status}}' "$($R ps -q restore-mongo)")"
+            [ "$status" = healthy ] && break
             sleep 5
           done
-          test "$ready" -ge 1
-          $R exec -T restore pbmc config --force-resync --wait
-          $R exec -T restore pbmc restore --time="$(cat restore-time.txt)" --yes --wait
+          test "$status" = healthy
+          $R up -d --no-deps restore-pbm
+          $R up --no-deps restore-pbm-config
+          $R exec -T restore-pbm pbmc config --force-resync --wait
+          $R exec -T restore-pbm pbmc restore --time="$(cat restore-time.txt)" --yes --wait
 
       # PBM runbook §3 step 3.
       - name: Restored site serves the marker page and the upload
         run: |
-          ASSURER_RESTORE_MODE=site $R up -d --no-deps restore
+          $RS up -d --no-deps restore-app
           for _ in $(seq 1 60); do
             [ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3044/)" = 200 ] && break
             sleep 5
@@ -244,7 +252,7 @@ jobs:
 
       - name: Startup log lines
         if: always()
-        run: $S logs site | grep -F '[assurer]' || true
+        run: $S logs | grep -F '[assurer' || true
 
       # MongoDB's own log lines hold no passwords, only user and host names.
       - name: Diagnostics after a failure
@@ -254,12 +262,12 @@ jobs:
           getconf PAGESIZE
           grep -m1 -i '^features' /proc/cpuinfo || true
           $S ps -a
-          docker run --rm --entrypoint mongod assurer-site:staging --version || echo "mongod --version exit $?"
-          $S logs --tail 60 site | grep -vF '[assurer]' | cut -c1-600 || true
-          $R ps -a restore || true
-          $R logs --tail 60 restore | cut -c1-600 || true
-          $R exec -T restore pbmc logs --tail 30 || true
+          docker run --rm --entrypoint mongod ghcr.io/mimnets/assurer-mongo:ci --version || echo "mongod --version exit $?"
+          $S logs --tail 60 mongo app | grep -vF '[assurer]' | cut -c1-600 || true
+          $RS ps -a || true
+          $RS logs --tail 60 restore-mongo restore-app | cut -c1-600 || true
+          $R exec -T restore-pbm pbmc logs --tail 30 || true
 
       - name: Remove the stack
         if: always()
-        run: $R down -v
+        run: $RS down -v

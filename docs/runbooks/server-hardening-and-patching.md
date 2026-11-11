@@ -21,7 +21,7 @@ credentials. Never copy one site's database into another.
 | TLS proxy (nginx container, §12 choice 3, §8) | `0.0.0.0:80`, `0.0.0.0:443` (and IPv6) | the internet |
 | SSH | `22` | admin addresses only (§3) |
 | Node app, in the site container (§7) | port `3000` on the Compose network only; no host port | the nginx container only |
-| `mongod`, in the site container (§6) | `127.0.0.1:27017` inside the container | the app and `pbm-agent` in the same container |
+| `mongod`, in the `mongo` container (§6; own container since m1-068) | `mongo:27017` on the internal `db` network, no published port | the `app`, `pbm` and `backup` containers |
 | Media | the `uploads` Docker volume, on the encrypted data area (§5, §7) | the app; nightly copy to the EU bucket |
 | Backup tool (PBM, in the site container) | outbound only, once the S3 storage is approved | sends to the backup target (§9) |
 
@@ -144,7 +144,7 @@ and where each one comes from:
 
 | Setting | Value | Why |
 |---|---|---|
-| `net.bindIp` | `127.0.0.1` | Only processes in the container reach MongoDB. Compose publishes no MongoDB port, and the site container publishes none at all (§1) |
+| `net.bindIp` | `0.0.0.0` inside the `mongo` container (m1-068; `127.0.0.1` in the one-container image) | Only the internal `db` network reaches it: no route out, no published port, and only the app and PBM are on it (§1) |
 | `net.tls.mode` | `requireTLS`, with a private CA | Hardening checklist [6]; decided in m1-055 for loopback too. Clients that do not use TLS are refused |
 | `net.tls.allowConnectionsWithoutCertificates` | `true` | Clients log in with a password (SCRAM); no client certificates |
 | `security.authorization` | `enabled` | Every client logs in [6] |
@@ -153,18 +153,23 @@ and where each one comes from:
 | `replication.replSetName` | `rs0`, one member | Needed for point-in-time recovery (D-DB-4) |
 | WiredTiger cache | `ASSURER_MONGO_CACHE_GB`, default 1 GB | The app shares the container's memory (m1-054 results §3) |
 
-What the entrypoint ([`docker/staging/entrypoint.sh`](../../docker/staging/entrypoint.sh)) does on
-the first start, following MongoDB's replica set tutorial [8] and security checklist [6]:
+What the stack does on the first start (m1-068: the `setup` job, [`docker/staging/setup.sh`](../../docker/staging/setup.sh),
+then the `mongo` container's [`mongo-entrypoint.sh`](../../docker/staging/mongo-entrypoint.sh); until
+m1-067 one entrypoint in one container did all of it), following MongoDB's replica set tutorial [8]
+and security checklist [6]:
 
-1. Creates the random secrets in the `secrets` volume: the key file, the database user passwords
-   and the session secret. Directory mode `0711`, files `0600` or `0400`, owner `root` (the key file
-   and the server certificate are owned by `mongodb`).
-2. Creates a private CA and a server certificate for `127.0.0.1` and `localhost`, and **deletes the
-   CA key** once the certificate is signed, so nothing on the server can sign another one. When the
-   server certificate has less than 30 days left (it lasts 825 days), the next start makes a new CA
-   and certificate; a regular image update restarts the container well before that.
-3. Starts `mongod`, runs `rs.initiate()` with one member, and at once creates the user administrator
-   through the localhost exception, which closes once that user exists.
+1. Creates the random secrets: the key file and the database user passwords in `mongo-secrets`,
+   with copies of the app's and PBM's passwords in `app-secrets` and `pbm-secrets`, and the session
+   secret in `app-secrets`. Each volume is mode `0700`, owned by its service's user, and mounted
+   read-only in that service only.
+2. Creates a private CA and a server certificate for `mongo` (the member's name on the internal
+   `db` network) and `localhost`, and **deletes the CA key** once the certificate is signed, so
+   nothing on the server can sign another one. When the server certificate has less than 30 days
+   left (it lasts 825 days), the next start makes a new CA and certificate, and `deploy.sh` restarts
+   MongoDB and its clients.
+3. Starts `mongod`, runs `rs.initiate()` with the member `mongo:27017`, and at once creates the user
+   administrator through the localhost exception, which closes once that user exists. MongoDB listens
+   on the internal `db` network, which has no route out and publishes no port.
 4. Creates one user per purpose, least privilege [6]:
 
    | User | Roles | Used by |
@@ -174,7 +179,7 @@ the first start, following MongoDB's replica set tutorial [8] and security check
    | `pbm` | `backup`, `restore`, `clusterMonitor`, `readWrite` on `admin`, and `pbmAnyAction` (`anyAction`) | `pbm-agent` and the backup schedule. Far more than the `backup` role first planned; accepted by the owner (D-DB-12) |
 
 5. Builds the app's connection string from the secrets at each start, in the app's environment only:
-   `mongodb://assurerApp:<secret>@127.0.0.1:27017/assurer?replicaSet=rs0&authSource=assurer&tls=true&tlsCAFile=/data/secrets/tls/ca.pem`.
+   `mongodb://assurerApp:<secret>@mongo:27017/assurer?replicaSet=rs0&authSource=assurer&tls=true&tlsCAFile=/secrets/ca.pem` (m1-068).
    It is never written to a file, a log or Git.
 
 MongoDB writes its log to the container's standard output, which Docker keeps. Set a size cap for
