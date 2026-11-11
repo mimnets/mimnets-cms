@@ -13,6 +13,11 @@ in `docs/architecture/decisions/`. If a request conflicts with a rule, stop and 
 ### Scope and change policy
 - **Minimal change.** Do what the task asks, nothing more. No opportunistic refactors,
   renames or reformatting of unrelated code. Match surrounding style.
+- **Clean architecture, never bolted on** (owner's standing instruction, 2026-11-11). Build
+  code cleanly and modularly, with proper architecture and separation of concerns. Never bolt a
+  feature on only because it was asked for. If it cannot be built naturally into the existing
+  design and a refactor would make the whole thing clean, stop before the work and say so,
+  with the refactor you recommend. Do not start the refactor without approval (Minimal change).
 - **Official Apostrophe APIs first.** Use pages, pieces, widgets, schema fields, the query
   builder, the REST API, `@apostrophecms/migration` and core tasks before writing anything
   custom. Read the installed source in `node_modules/apostrophe` when docs are unclear.
