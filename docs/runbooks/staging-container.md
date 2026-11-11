@@ -2,11 +2,17 @@
 
 | | |
 |---|---|
-| **Status** | **Draft; built and run on the owner's PC (`amd64`) and on a hosted GitHub runner (`arm64`) only** (`m1-055` to `m1-058`, agent-executed): see §8 for what was run and what was not. **m1-063: started in NPM mode on the owner's OCI server (`arm64`, Ubuntu 22.04, kernel 6.8) with §9.2's script, private (no domain, NPM not joined)**; not yet reached through NPM. **m1-064: the interactive installer (§10), tested locally only.** Running it on a server needs the owner's approval (D-DB-2, D-DB-3, D-DB-7 and the server task) |
+| **Status** | **Draft; built and run on the owner's PC (`amd64`) and on a hosted GitHub runner (`arm64`) only** (`m1-055` to `m1-058`, agent-executed): see §8 for what was run and what was not. **m1-063: started in NPM mode on the owner's OCI server (`arm64`, Ubuntu 22.04, kernel 6.8) with §9.2's script, private (no domain, NPM not joined)**; not yet reached through NPM. **m1-064: the interactive installer (§10), tested locally only.** **m1-065: IP mode (§11), plain HTTP on the public address before go-live.** Running it on a server needs the owner's approval (D-DB-2, D-DB-3, D-DB-7 and the server task) |
 | **Purpose** | The staging version of the one-container image (ADR-0004 Decision 2, D-DB-10 (b)): app and MongoDB 8.0.34 in one container with TLS, member authentication, PBM, no demo content and no default password; nginx and certbot in their own containers |
 | **Not for** | Production as it stands: production needs x.509 member authentication (hardening runbook §12 choice 2), the S3 backup storage (D-DB-12) and `APOS_ALLOW_INDEXING=1` |
-| **Files** | [`docker/staging/`](../../docker/staging/): `compose.yaml`, `compose.npm.yaml` (§9), `Dockerfile`, `entrypoint.sh`, `run-as.sh`, `mongod.conf`, `pbm-config.yaml`, `pbmc.sh`, `host-facts.sh` (§9.1), `npm-setup.sh` (§9.2), `install.sh` (§10), `nginx/`, `certbot/` |
+| **Files** | [`docker/staging/`](../../docker/staging/): `compose.yaml`, `compose.npm.yaml` (§9), `Dockerfile`, `entrypoint.sh`, `run-as.sh`, `mongod.conf`, `pbm-config.yaml`, `pbmc.sh`, `host-facts.sh` (§9.1), `npm-setup.sh` (§9.2), `install.sh` (§10), `compose.ip.yaml` and `ip-setup.sh` (§11), `nginx/`, `certbot/` |
 | **Related** | [hardening runbook](./server-hardening-and-patching.md) §6–§8 · [PBM runbook](./pbm-backup-and-restore.md) · [HTTP security and HTTPS proxy](./security-configuration.md) · [demo container](./docker-single-container.md) · [m1-054 cluster results](../milestones/m1-054-cluster-mode-results.md) |
+
+> **Setting up a server for the first time? Start at [§11, IP mode](#11-ip-mode-the-site-on-the-public-address-before-go-live-m1-065).**
+> As root on the server: `git clone` the repository (or `git pull` in the clone), then
+> `bash docker/staging/ip-setup.sh <public-ip>`. The site opens at `http://<public-ip>:8090`; the
+> domain, NPM and Cloudflare follow at go-live (§11.4). Works on `arm64` and `amd64`: the images are
+> built on the server itself.
 
 ## 1. Layout
 
@@ -417,3 +423,90 @@ the domain. A real certificate already in place skips step 7.
 **Not covered:** route A on a real server; IPv6; Cloudflare's proxy (orange cloud), which needs its
 own design (§9.1 A, point 4); Chrome as an editor through the public host name (the agent runs it with
 the owner's approval). The script makes nothing production-ready: step 9 lists what is still open.
+
+## 11. IP mode: the site on the public address before go-live (m1-065)
+
+The owner's route (m1-065): start the site on the server's public address and one port, sign in and
+set up the content there, and switch to the domain later. The WordPress site keeps serving the domain
+until go-live. One script, safe to run again. It never touches NPM or another container.
+
+```
+ Internet ──► http://<public-ip>:8090 ──► site:3000        (no nginx, no NPM, no TLS)
+```
+
+**Read this first.** IP mode is **plain HTTP**: the admin password and every page cross the internet
+unencrypted, and anyone who finds the address can see the site. There is no nginx in front, so no
+upload size limit at the proxy and no proxy rate limit. Use it only until go-live, then change the
+admin password again. The production items in §9.2 stay open.
+
+### 11.1 Start
+
+As root, in the clone, on `main`:
+
+```sh
+cd /home/ubuntu/vcl-assurer-group
+git switch main && git pull
+bash docker/staging/ip-setup.sh <public-ip>          # port 8090
+bash docker/staging/ip-setup.sh <public-ip> 8091     # another port
+```
+
+The public IP is in the OCI console: **Compute → Instances →** the instance **→ Public IP address**.
+The script stops, before it changes anything, if the kernel is not on the 6.8 line (D-DB-16), if a
+standalone stack is there, or if the port is in use (§11.2). Then it writes `docker/staging/.env`
+(git-ignored, mode `0600`; the same keys as §9.2, plus `ASSURER_PUBLIC_IP` and `ASSURER_IP_PORT`),
+builds and starts the site, waits for a 200 and prints the next steps.
+
+**Open the port** (the owner's change, OCI console): **Networking → Virtual cloud networks →** the
+VCN **→ Security Lists → Default Security List → Add Ingress Rules**: Source CIDR `0.0.0.0/0`, IP
+Protocol `TCP`, Destination Port Range `8090` (or the port chosen). Docker's published ports do not
+pass the host's `INPUT` rules, so no `iptables` change is needed on the server.
+
+**Sign in:** `http://<public-ip>:8090/login`, user `admin`. The first password, read once and then
+changed in the admin UI:
+
+```sh
+docker compose -f docker/staging/compose.yaml -f docker/staging/compose.ip.yaml \
+  exec site cat /data/secrets/admin-initial-password
+```
+
+### 11.2 When the port is already in use
+
+The script checks the port first and names what holds it:
+
+| Message | Meaning | What to do |
+|---|---|---|
+| `port 8090 is used by container(s): <names>` | Another Docker container publishes that port | Pick a free port: `bash docker/staging/ip-setup.sh <public-ip> 8091` |
+| `port 8090 is in use by a program on this server` | A program outside Docker listens on it | See which: `ss -tlnp 'sport = :8090'`; pick another port as above |
+| `port 8090 is free` | Free, or already this site's own port (a run again) | Nothing |
+
+To list ports already taken on the server: `ss -tlnp` and `docker ps --format '{{.Names}}  {{.Ports}}'`.
+Ports 80, 81 and 443 belong to NPM: never use them here. After a change of port, change the OCI
+ingress rule to match and remove the old one.
+
+### 11.3 Everyday commands
+
+```sh
+S="docker compose -f docker/staging/compose.yaml -f docker/staging/compose.ip.yaml"
+$S ps           # site running (healthy)
+$S logs site    # the app's log
+$S restart site
+$S stop site    # stops the site; data stays in the volumes
+```
+
+Never run `$S down -v`: it deletes the database, media, secrets and backups (§9.3).
+
+### 11.4 Go-live: from IP mode to the domain
+
+The database, media and secrets stay; only the way in changes. Each step is the owner's change, with
+the owner's approval. The WordPress site stops answering for the domain at step 1, so do it when the
+content is ready.
+
+1. Cloudflare: change the domain's record to an `A` record with the server's IPv4, **DNS only** (§9.1 A).
+2. NPM joins `assurer-npm` at `172.30.56.2` (§9 owner's step 2, §9.2 "Later" step 2).
+3. `bash docker/staging/npm-setup.sh --domain <host name>`. This removes the public port from the
+   site, starts nginx in NPM mode and switches the site to `https://<host name>`.
+4. NPM proxy host for the host name (§9 owner's step 3), real Let's Encrypt certificate (§10).
+5. Remove the OCI ingress rule for port 8090. Change the admin password again.
+6. The checks after a start (§9).
+
+Not yet run on a server (m1-065 records the result).
