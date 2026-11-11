@@ -45,6 +45,10 @@ in `docs/architecture/decisions/`. If a request conflicts with a rule, stop and 
   `npm run test:workflow` and `npm run test:persistence` (server running; test
   credentials are read from the git-ignored `.env`).
   Report the **actual** results, including failures and anything not verified.
+- **Final check for every feature: the implicit state review** (added m1-066, owner's standing
+  instruction). Find the implicit state machines the change adds or touches, and make the
+  decision that improves user, developer and agent experience without breaking anything. Steps
+  and the report section are in `docs/engineering/STANDARDS.md`.
 
 ### Browser acceptance testing (added m0-008)
 Automated suites call the API as admin. They do not prove that the UI works for real editors.

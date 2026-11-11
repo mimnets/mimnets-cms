@@ -84,6 +84,36 @@ running it, from what the task changed. A generic list doesn't count.
   key interactions work, and logged-out access controls hold.
 - Evidence stays in `evidence/<task-id>/` (git-ignored). Reports cite file names only.
 
+## Implicit state review (every feature; added m1-066)
+
+The owner's standing instruction, verbatim (2026-11-11):
+
+> Find all of the implicit state machines in my app. Make the best decision that will elevate all
+> three: the user experience (UX), developer experience (DX), and agent experience (AX) always,
+> without breaking anything.
+
+Run this as the final check of every task that adds or changes a feature, after the automated
+suites and browser checks:
+
+1. **Find** the state the change adds or touches: flags, classes, attributes, timers, status
+   fields, steps in a script. State is *implicit* when one condition is spread over two or more
+   of these, or when which transitions are allowed is nowhere written down.
+2. **Decide** for each one. Make it explicit only when that fixes or prevents wrong behaviour, or
+   clearly helps users, developers or agents: one named state, one place that changes it, the
+   allowed transitions in a comment, and final states that ignore late events. Keep it as is
+   when it already has one source of truth (for example `aria-expanded`, a native `<dialog>`, a
+   stored and documented status field).
+3. **Make it observable** where tests or agents need it: an ARIA attribute or a
+   `data-assurer-*-state` attribute, not only a CSS class.
+4. **Do not break anything**: same messages, markup contracts and server contracts unless the
+   task says otherwise; run the suites and browser checks again after the change.
+5. **Stay in scope**: the review covers the code the task touched. Implicit state found
+   elsewhere is listed in the report as a candidate, not fixed (minimal change rule).
+
+Every feature report has an **Implicit state review** subsection: a table of what was found,
+the decision (changed or kept) and the reason. Docs-only tasks write "not applicable".
+m1-066's report is the first example.
+
 Rules: report actual results only. Say what was not done or not verified. No secrets, tokens,
 passwords or session data, even redacted fragments. Historical reports are never rewritten. A
 correction is a new dated report that links to the old one.
