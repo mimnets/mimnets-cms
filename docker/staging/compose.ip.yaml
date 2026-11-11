@@ -1,0 +1,25 @@
+# IP mode (m1-065): the first start on a server before the domain is set.
+# The site answers over plain HTTP on the server's public address and one port,
+# so the owner can sign in and set up content before go-live. nginx and certbot
+# do not start. Plain HTTP: passwords cross the network unencrypted, so change
+# the admin password again once the site runs behind HTTPS.
+# Start with: bash docker/staging/ip-setup.sh <public-ip> [port]
+# Go-live (same database and media): bash docker/staging/npm-setup.sh --domain <host name>
+# Guide: docs/runbooks/staging-container.md §11.
+services:
+  site:
+    ports:
+      - "${ASSURER_IP_PORT:-8090}:3000"
+    environment:
+      APOS_BASE_URL: http://${ASSURER_PUBLIC_IP:?set the server's public IPv4}:${ASSURER_IP_PORT:-8090}
+      # No proxy in front and no TLS, so no Secure cookies, proxy trust or HSTS.
+      APOS_HTTPS: "0"
+      APOS_TRUST_PROXY: ""
+      APOS_HSTS_MAX_AGE: ""
+
+  cert-bootstrap:
+    profiles: [standalone]
+  nginx:
+    profiles: [standalone]
+  certbot:
+    profiles: [standalone]

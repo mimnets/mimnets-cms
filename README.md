@@ -32,6 +32,12 @@ npm run dev                                          # http://localhost:3000
 
 Log in at `/login`. The server binds to `127.0.0.1` only (override with `ADDRESS`).
 
+## Server setup
+
+To run the site on a server (Docker, `arm64` or `amd64`), start at the
+[staging container runbook §11](docs/runbooks/staging-container.md#11-ip-mode-the-site-on-the-public-address-before-go-live-m1-065):
+`bash docker/staging/ip-setup.sh <public-ip>` starts it at `http://<public-ip>:8090`.
+
 ## Scripts
 
 | Command | Purpose |
