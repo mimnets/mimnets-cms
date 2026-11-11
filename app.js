@@ -103,6 +103,8 @@ apostrophe({
     '@apostrophecms/redirect': {},
     'assurer-seo': {},
     'assurer-demo': {},
+    // WordPress import into drafts (m1-067, D-CONTENT-17).
+    'assurer-wp-import': {},
     // Test-only tasks (CI admin bootstrap); refuse to run outside a
     // temporary SQLite database.
     'assurer-test': {}

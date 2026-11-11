@@ -239,7 +239,15 @@ async function steps() {
       PUBLISH_TEST_DISPOSABLE: '1'
     }) &&
     await run('legacy redirect map test', [ 'scripts/seo-test.mjs', '--redirects' ], { SEO_TEST_DISPOSABLE: '1' }) &&
-    await stopServer().then(() => startServer('forms', formsEnv)) &&
+    // After the redirect map test, which expects exactly the legacy redirects:
+    // the import adds one redirect per PDF (m1-067).
+    await stopServer().then(() => run('WordPress import, twice (second run must change nothing)', [
+      'scripts/wp-import-test.mjs'
+    ], { WP_IMPORT_TEST_DISPOSABLE: '1' })) &&
+    await startServer('forms', formsEnv) &&
+    await run('WordPress import: drafts stay private', [ 'scripts/wp-import-test.mjs', '--verify-only' ], {
+      WP_IMPORT_TEST_DISPOSABLE: '1'
+    }) &&
     await run('form operations test', [ 'scripts/form-ops-test.mjs' ], {
       ...formsEnv,
       FORM_OPS_SMTP_PORT: String(smtpPort),
