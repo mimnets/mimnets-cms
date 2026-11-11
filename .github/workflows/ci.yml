@@ -231,8 +231,16 @@ jobs:
           GH_ACTOR: ${{ github.actor }}
         run: |
           printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
+          # Up to 3 tries per image: ghcr.io sometimes answers a push with a
+          # passing error (m1-068).
           for name in app mongo nginx certbot; do
-            docker push --quiet "$ASSURER_REGISTRY/assurer-$name:$ASSURER_IMAGE_TAG"
+            image="$ASSURER_REGISTRY/assurer-$name:$ASSURER_IMAGE_TAG"
+            for try in 1 2 3; do
+              docker push --quiet "$image" && break
+              [ "$try" = 3 ] && exit 1
+              echo "push of $image failed (try $try); again in $((try * 15)) s"
+              sleep $((try * 15))
+            done
           done
           docker logout ghcr.io
 

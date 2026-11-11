@@ -351,3 +351,4 @@ Found while building; none changes the approved design's intent.
 | `edge` subnet | as today, `172.30.55.0/24` | `172.30.57.0/24` (`ASSURER_EDGE_SUBNET`) | The one-container stack's network keeps `172.30.55.0/24` while its stopped containers exist, so the new stack could not create its own |
 | Mode for `deploy.sh` | the mode as set by the scripts | `ASSURER_PROXY_MODE` (`ip`, `npm`, `standalone`) in `.env`, written by all three setup scripts; `deploy.sh` stops if it is missing | Before, IP mode left `ASSURER_UPSTREAM_PROXY_IP` in `.env`, so the route could not be inferred safely |
 | First admin password | — | written with a newline | `user:add` waits for a whole line |
+| nginx and certbot images | unchanged apart from the name | flattened into layers of our own, like app and mongo; pushes tried up to 3 times | The first release push failed at nginx with `unknown blob` after app and mongo went through (report, follow-up) |

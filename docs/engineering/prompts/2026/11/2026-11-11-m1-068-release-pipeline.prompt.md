@@ -16,3 +16,4 @@ pipeline (D-DB-21) and one container per service in one Compose stack (D-DB-20),
 - ADR-0004 Amendment 1: "Accept (Recommended)" (D-DB-23)
 - D-SEC-10: "Accept until fixed (Recommended)"
 - Commit and push: "Commit and push (Recommended)" (D-GIT-72)
+- After the merge: "i have login with github classic token here now what?"; the first release push had failed ("unknown blob"). Fix: "Flatten + retry (Recommended)"; commit and push: "Commit and push (Recommended)" (D-GIT-73)
