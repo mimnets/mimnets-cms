@@ -1,0 +1,58 @@
+# Local and CI builds of the stack's four images (m1-068). compose.yaml names
+# only the images, so a server never builds; this file adds how to build them.
+# Run from the repository root, with a tag of your choice:
+#   export ASSURER_IMAGE_TAG=local
+#   docker compose -f docker/staging/compose.yaml -f docker/staging/compose.build.yaml build
+# Then start as usual with the same two files (`up -d`). Every image is built
+# for the machine's own platform: CI builds amd64 and arm64 on native runners.
+# Guide: docs/runbooks/staging-container.md
+
+x-labels: &labels
+  org.opencontainers.image.source: https://github.com/mimnets/vcl-assurer-group
+  org.opencontainers.image.revision: ${APOS_RELEASE_ID:-docker-local}
+
+services:
+  # The root Dockerfile's build stage (npm ci, npm run build, prune), the app
+  # image's named context. Built, never started. Not a profile: some Compose
+  # versions then refuse the whole file, because app uses this service as a
+  # build context (m1-058).
+  app-build:
+    build:
+      context: ../..
+      target: build
+      args:
+        APOS_RELEASE_ID: ${APOS_RELEASE_ID:-docker-local}
+    image: assurer-app-build:${ASSURER_IMAGE_TAG:?set the image tag}
+    scale: 0
+    # Compose does not pass DOCKER_DEFAULT_PLATFORM on to a service used only
+    # as a build context.
+    platform: ${DOCKER_DEFAULT_PLATFORM:-}
+
+  app:
+    build:
+      context: ../..
+      dockerfile: docker/staging/app/Dockerfile
+      args:
+        APOS_RELEASE_ID: ${APOS_RELEASE_ID:-docker-local}
+      additional_contexts:
+        app-build: service:app-build
+      labels: *labels
+
+  # The setup, pbm, backup, cert-bootstrap and restore services use the same image.
+  mongo:
+    build:
+      context: ../..
+      dockerfile: docker/staging/mongo/Dockerfile
+      labels: *labels
+
+  nginx:
+    build:
+      context: .
+      dockerfile: nginx/Dockerfile
+      labels: *labels
+
+  certbot:
+    build:
+      context: .
+      dockerfile: certbot/Dockerfile
+      labels: *labels

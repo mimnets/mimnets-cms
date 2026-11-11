@@ -1,7 +1,8 @@
 #!/bin/bash
 # Interactive installer for the staging stack on a server (m1-064, D-DB-18;
 # design docs/milestones/m1-064-installer-design.md; runbook
-# docs/runbooks/staging-container.md §10). Builds and starts the stack, checks
+# docs/runbooks/staging-container.md §10). Starts the stack (deploy.sh --here,
+# images from ghcr.io since m1-068), checks
 # it, then guides the owner step by step through the public address, the
 # domain, the certificate and the final checks. It changes only this stack: for
 # NPM, Portainer, Cloudflare and the OCI console it shows the exact command or
@@ -291,12 +292,12 @@ wait_ok() {
     [ "$code" = 200 ] && return 0
     sleep 10
   done
-  MSG="no 200 after 10 minutes (last: '${code:-none}'); see: ${S[*]} logs site"
+  MSG="no 200 after 10 minutes (last: '${code:-none}'); see: ${S[*]} logs app"
   return 1
 }
 
 step3() {
-  hr "Step 3: build and start"
+  hr "Step 3: pull and start"
   load_env
   [ -n "$MODE" ] || die "no settings; run steps 1 and 2 first"
   if [ "$MODE" = npm ]; then
@@ -306,10 +307,9 @@ step3() {
     else record "3 build and start" FAIL "npm-setup.sh stopped; see above"; fi
     return
   fi
-  show "The script runs (the first build takes a while):" "${S[*]} build" "${S[*]} up -d"
+  show "The script runs (pulls this commit's images and starts them):" "bash docker/staging/deploy.sh --here"
   [ "$(choose "[r]un, [s]kip or [q]uit?" rsq)" = r ] || { record "3 build and start" SKIPPED ""; return; }
-  "${S[@]}" build || { record "3 build and start" FAIL "build failed"; return; }
-  "${S[@]}" up -d || { record "3 build and start" FAIL "up failed"; return; }
+  bash docker/staging/deploy.sh --here || { record "3 build and start" FAIL "deploy.sh stopped; see above"; return; }
   MSG=""
   if wait_ok; then record "3 build and start" PASS "ports $(front 80), $(front 443)"
   else record "3 build and start" FAIL "$MSG"; fi
@@ -331,8 +331,8 @@ step4() {
   check_loop "4 check on the server" check_local
   show "First admin login (runbook §3). Read the password once, log in as 'admin' at" \
     "https://$DOMAIN/login, change it in the admin UI, then delete the file:" \
-    "${S[*]} exec site cat /data/secrets/admin-initial-password" \
-    "${S[*]} exec site rm /data/secrets/admin-initial-password" \
+    "${S[*]} exec app cat /app/data/admin-initial-password" \
+    "${S[*]} exec app rm /app/data/admin-initial-password" \
     "Never paste the password into a chat, ticket or document."
 }
 
@@ -382,8 +382,8 @@ step6() {
     done
   fi
   if [ "$d" != "$DOMAIN" ]; then
-    if [ "$MODE" = npm ]; then show "The script runs (recreates site and nginx):" "bash docker/staging/npm-setup.sh --domain $d"
-    else show "The script sets ASSURER_DOMAIN and APOS_BASE_URL in $ENV_FILE, then runs (recreates site and nginx):" "${S[*]} up -d"; fi
+    if [ "$MODE" = npm ]; then show "The script runs (recreates app and nginx):" "bash docker/staging/npm-setup.sh --domain $d"
+    else show "The script sets ASSURER_DOMAIN and APOS_BASE_URL in $ENV_FILE, then runs (recreates app and nginx):" "${S[*]} up -d"; fi
     [ "$(choose "[r]un, [s]kip or [q]uit?" rsq)" = r ] || { record "6 domain and DNS" SKIPPED "domain not changed"; return; }
     if [ "$MODE" = npm ]; then
       bash docker/staging/npm-setup.sh --domain "$d" || { record "6 domain and DNS" FAIL "npm-setup.sh --domain stopped"; return; }
@@ -550,7 +550,7 @@ step8() {
   c=$(head -c 35651584 /dev/zero | dcurl 443 -o /dev/null -w '%{http_code}' -X POST \
     -H 'Expect:' -H 'Content-Type: application/octet-stream' --data-binary @- "https://$DOMAIN/")
   [ "$c" = 413 ] && record "8 34 MB refused" PASS "413" || record "8 34 MB refused" FAIL "$c"
-  if "${S[@]}" exec -T site pbmc status > /tmp/assurer-pbm.$$ 2>&1; then
+  if "${S[@]}" exec -T pbm pbmc status > /tmp/assurer-pbm.$$ 2>&1; then
     grep -iE 'pitr|agent' /tmp/assurer-pbm.$$ | head -5 | sed 's/^/    /'; record "8 PBM status" PASS ""
   else record "8 PBM status" FAIL "pbmc status failed"; fi
   rm -f /tmp/assurer-pbm.$$

@@ -1,70 +1,120 @@
-# Staging stack (m1-055): the one-container site (app, MongoDB with TLS, PBM;
-# D-DB-10 (b)), nginx in its own container as the only public entry, and
-# certbot for the certificate. The site container publishes no port. Run from
-# the repository root:
-#   ASSURER_DOMAIN=staging.example.org APOS_BASE_URL=https://staging.example.org \
-#     docker compose -f docker/staging/compose.yaml up -d --build
-# Further settings (SMTP and so on) go in docker/staging/site.env (git-ignored).
-# For arm64 on an amd64 PC, also set DOCKER_DEFAULT_PLATFORM=linux/arm64 and
-# ASSURER_TAG_SUFFIX=-arm64. That route is not tested; m1-058 proved arm64 with
-# .github/workflows/staging-arm64.yml instead.
+# The stack (m1-055; one container per service since m1-068, D-DB-20): the
+# app, MongoDB with TLS, pbm-agent and the backup schedule, each in its own
+# container, behind nginx with certbot. Only nginx publishes ports. The images
+# come from ghcr.io, built by CI for each commit on main (D-DB-21); on a server,
+# docker/staging/deploy.sh pulls and starts them. To build locally instead, add
+# compose.build.yaml (see there). Run from the repository root:
+#   docker compose -f docker/staging/compose.yaml up -d
+# Settings: docker/staging/.env (written by the setup scripts) and
+# docker/staging/site.env (SMTP and so on); both git-ignored.
 # Guide: docs/runbooks/staging-container.md
-name: assurer-staging
+name: mimnets-cms
 
-x-site-image: &site-image assurer-site:staging${ASSURER_TAG_SUFFIX:-}
+x-app-image: &app-image ${ASSURER_REGISTRY:-ghcr.io/mimnets}/assurer-app:${ASSURER_IMAGE_TAG:?set the release, a commit SHA on main (deploy.sh sets it)}
+x-mongo-image: &mongo-image ${ASSURER_REGISTRY:-ghcr.io/mimnets}/assurer-mongo:${ASSURER_IMAGE_TAG:?set the release, a commit SHA on main (deploy.sh sets it)}
 
 services:
-  # The root Dockerfile's image under its own tag, as the staging build's base.
-  base:
-    build:
-      context: ../..
-    image: assurer-site:staging-base${ASSURER_TAG_SUFFIX:-}
-    # Built, never started. Not a profile: some Compose versions then refuse the
-    # whole file, because `site` uses this service as a build context (m1-058).
-    scale: 0
-    # Compose does not pass DOCKER_DEFAULT_PLATFORM on to a service used only
-    # as a build context.
-    platform: ${DOCKER_DEFAULT_PLATFORM:-}
+  # Writes the missing secrets and the MongoDB TLS files at each start, then
+  # exits (setup.sh). Each service below mounts only its own secrets volume.
+  setup:
+    image: *mongo-image
+    entrypoint: ["assurer-setup"]
+    volumes:
+      - mongo-secrets:/secrets/mongo
+      - app-secrets:/secrets/app
+      - pbm-secrets:/secrets/pbm
+    network_mode: none
 
-  site:
-    build:
-      context: ../..
-      dockerfile: docker/staging/Dockerfile
-      args:
-        BASE_IMAGE: staging-base
-      additional_contexts:
-        staging-base: service:base
-    image: *site-image
+  mongo:
+    image: *mongo-image
     restart: unless-stopped
     stop_grace_period: 60s
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+    environment:
+      # Size it with the app's processes against the server's memory (m1-054 results §3).
+      ASSURER_MONGO_CACHE_GB: ${ASSURER_MONGO_CACHE_GB:-1}
+    volumes:
+      - mongo-db:/data/db
+      - mongo-secrets:/secrets:ro
+    networks:
+      - db
+    healthcheck:
+      test: ["CMD", "assurer-mongo-health"]
+      interval: 10s
+      timeout: 10s
+      start_period: 120s
+      retries: 6
+    mem_limit: ${ASSURER_MONGO_MEMORY:-2g}
+
+  # pbm-agent is the container's only process; Docker restarts it if it stops.
+  pbm:
+    image: *mongo-image
+    user: pbm
+    entrypoint: ["assurer-pbm-agent"]
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    volumes:
+      - pbm-backups:/backups
+      - pbm-secrets:/secrets:ro
+    networks:
+      - db
+    mem_limit: ${ASSURER_PBM_MEMORY:-1g}
+
+  # The PBM configuration and the base-backup schedule (backup-schedule.sh).
+  backup:
+    image: *mongo-image
+    user: pbm
+    entrypoint: ["assurer-backup-schedule"]
+    restart: unless-stopped
+    depends_on:
+      pbm:
+        condition: service_started
+    environment:
+      ASSURER_BACKUP_INTERVAL_HOURS: ${ASSURER_BACKUP_INTERVAL_HOURS:-24}
+      ASSURER_BACKUP_RETENTION: ${ASSURER_BACKUP_RETENTION:-8d}
+    volumes:
+      - pbm-backups:/backups:ro
+      - pbm-secrets:/secrets:ro
+    networks:
+      - db
+    mem_limit: ${ASSURER_BACKUP_MEMORY:-256m}
+
+  app:
+    image: *app-image
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 60s
+    depends_on:
+      mongo:
+        condition: service_healthy
     env_file:
       - path: ./site.env
         required: false
     environment:
-      APOS_BASE_URL: ${APOS_BASE_URL:?set the public https origin, for example https://staging.example.org}
+      APOS_BASE_URL: ${APOS_BASE_URL:?set the public https origin, for example https://www.example.org}
       APOS_HTTPS: "1"
       # Only nginx may set the X-Forwarded headers (security-configuration.md).
-      APOS_TRUST_PROXY: ${ASSURER_NGINX_IP:-172.30.55.10}
+      APOS_TRUST_PROXY: ${ASSURER_NGINX_IP:-172.30.57.10}
       # Start short and raise it once HTTPS is confirmed (runbook §8 point 4).
       APOS_HSTS_MAX_AGE: ${APOS_HSTS_MAX_AGE:-300}
       APOS_CLUSTER_PROCESSES: ${APOS_CLUSTER_PROCESSES:-2}
-      # Size these two against the server's memory (m1-054 results §3).
-      ASSURER_MONGO_CACHE_GB: ${ASSURER_MONGO_CACHE_GB:-1}
-      ASSURER_BACKUP_INTERVAL_HOURS: ${ASSURER_BACKUP_INTERVAL_HOURS:-24}
-      ASSURER_BACKUP_RETENTION: ${ASSURER_BACKUP_RETENTION:-8d}
     volumes:
-      - mongo-data:/data/db
-      - secrets:/data/secrets
-      - uploads:/app/public/uploads
+      - media:/app/public/uploads
       - app-data:/app/data
-      - backups:/backups
+      - app-secrets:/secrets:ro
     networks:
+      - db
       - edge
+    mem_limit: ${ASSURER_APP_MEMORY:-2g}
 
   # Writes a self-signed certificate valid for 30 days if there is none yet,
   # so nginx can start before certbot has issued the real one.
   cert-bootstrap:
-    image: *site-image
+    image: *mongo-image
     entrypoint: ["bash", "-c"]
     command:
       - >-
@@ -83,10 +133,7 @@ services:
     network_mode: none
 
   nginx:
-    build:
-      context: .
-      dockerfile: nginx/Dockerfile
-    image: assurer-nginx:staging${ASSURER_TAG_SUFFIX:-}
+    image: ${ASSURER_REGISTRY:-ghcr.io/mimnets}/assurer-nginx:${ASSURER_IMAGE_TAG:?set the release}
     restart: unless-stopped
     init: true
     depends_on:
@@ -106,15 +153,13 @@ services:
       - acme-webroot:/var/www/acme:ro
     networks:
       edge:
-        ipv4_address: ${ASSURER_NGINX_IP:-172.30.55.10}
+        ipv4_address: ${ASSURER_NGINX_IP:-172.30.57.10}
+    mem_limit: ${ASSURER_NGINX_MEMORY:-256m}
 
   # Renews the certificate twice a day when it is due. The first certificate is
   # requested by hand (docs/runbooks/staging-container.md).
   certbot:
-    build:
-      context: .
-      dockerfile: certbot/Dockerfile
-    image: assurer-certbot:staging${ASSURER_TAG_SUFFIX:-}
+    image: ${ASSURER_REGISTRY:-ghcr.io/mimnets}/assurer-certbot:${ASSURER_IMAGE_TAG:?set the release}
     restart: unless-stopped
     entrypoint: ["/bin/sh", "-c"]
     command:
@@ -127,67 +172,137 @@ services:
     volumes:
       - certs:/etc/letsencrypt
       - acme-webroot:/var/www/acme
+    mem_limit: ${ASSURER_CERTBOT_MEMORY:-256m}
 
-  # Restore drill (docs/runbooks/pbm-backup-and-restore.md). Copies what a
-  # rebuild would get back from elsewhere: the secrets, the media and the
-  # backups. The restore container gets its own copy, never write access to
-  # the site's backups.
+  # Restore drill (docs/runbooks/pbm-backup-and-restore.md §3), profile
+  # "restore". Copies what a rebuild would get back from elsewhere: the
+  # secrets, the media and the backups. The restore services get their own
+  # copies, never write access to the site's volumes, and their own network,
+  # on which restore-mongo is called mongo, so the same addresses and
+  # certificate work.
   restore-copy:
-    image: *site-image
+    image: *mongo-image
     profiles: [restore]
     entrypoint: ["bash", "-c"]
     command:
       - >-
-        cp -a /from/secrets/. /data/secrets/ &&
-        rm -f /data/secrets/.database-ready /data/secrets/.pbm-configured &&
-        cp -a /from/uploads/. /app/public/uploads/ &&
-        cp -a /from/backups/. /backups/
+        cp -a /from/mongo-secrets/. /to/mongo-secrets/ &&
+        cp -a /from/app-secrets/. /to/app-secrets/ &&
+        cp -a /from/pbm-secrets/. /to/pbm-secrets/ &&
+        cp -a /from/media/. /to/media/ &&
+        cp -a /from/backups/. /to/backups/
     volumes:
-      - secrets:/from/secrets:ro
-      - uploads:/from/uploads:ro
-      - backups:/from/backups:ro
-      - restore-secrets:/data/secrets
-      - restore-uploads:/app/public/uploads
-      - restore-backups:/backups
+      - mongo-secrets:/from/mongo-secrets:ro
+      - app-secrets:/from/app-secrets:ro
+      - pbm-secrets:/from/pbm-secrets:ro
+      - media:/from/media:ro
+      - pbm-backups:/from/backups:ro
+      - restore-mongo-secrets:/to/mongo-secrets
+      - restore-app-secrets:/to/app-secrets
+      - restore-pbm-secrets:/to/pbm-secrets
+      - restore-media:/to/media
+      - restore-backups:/to/backups
     network_mode: none
 
-  # Starts empty, in restore mode. After `pbmc restore`, recreate it with
-  # ASSURER_RESTORE_MODE=site to run the migrations and the app, over plain
-  # HTTP on this host's loopback only.
-  restore:
-    image: *site-image
+  # Starts empty, without the app user, which the restore brings back.
+  restore-mongo:
+    image: *mongo-image
     profiles: [restore]
+    stop_grace_period: 60s
+    environment:
+      ASSURER_RESTORE: "1"
+      ASSURER_MONGO_CACHE_GB: "1"
+    volumes:
+      - restore-mongo-db:/data/db
+      - restore-mongo-secrets:/secrets:ro
+    networks:
+      restore-db:
+        aliases: [mongo]
+    healthcheck:
+      test: ["CMD", "assurer-mongo-health"]
+      interval: 10s
+      timeout: 10s
+      start_period: 120s
+      retries: 6
+
+  restore-pbm:
+    image: *mongo-image
+    profiles: [restore]
+    user: pbm
+    entrypoint: ["assurer-pbm-agent"]
+    depends_on:
+      restore-mongo:
+        condition: service_healthy
+    volumes:
+      - restore-backups:/backups
+      - restore-pbm-secrets:/secrets:ro
+    networks:
+      - restore-db
+
+  # Applies the PBM configuration with PITR off, then exits.
+  restore-pbm-config:
+    image: *mongo-image
+    profiles: [restore]
+    user: pbm
+    entrypoint: ["assurer-backup-schedule"]
+    depends_on:
+      restore-pbm:
+        condition: service_started
+    environment:
+      ASSURER_BACKUP_INTERVAL_HOURS: "0"
+    volumes:
+      - restore-pbm-secrets:/secrets:ro
+    networks:
+      - restore-db
+
+  # Profile "restore-site": started by hand after `pbmc restore`. Plain HTTP
+  # on this host's loopback only.
+  restore-app:
+    image: *app-image
+    profiles: [restore-site]
+    init: true
     stop_grace_period: 60s
     ports:
       - "127.0.0.1:${ASSURER_RESTORE_PORT:-3044}:3000"
     environment:
-      ASSURER_MODE: ${ASSURER_RESTORE_MODE:-restore}
       APOS_BASE_URL: http://localhost:${ASSURER_RESTORE_PORT:-3044}
       APOS_CLUSTER_PROCESSES: "1"
-      ASSURER_BACKUP_INTERVAL_HOURS: "0"
+      ASSURER_CREATE_ADMIN: "0"
     volumes:
-      - restore-mongo-data:/data/db
-      - restore-secrets:/data/secrets
-      - restore-uploads:/app/public/uploads
+      - restore-media:/app/public/uploads
       - restore-app-data:/app/data
-      - restore-backups:/backups
+      - restore-app-secrets:/secrets:ro
+    networks:
+      - restore-db
+      - restore-edge
 
 networks:
   edge:
     ipam:
       config:
-        - subnet: ${ASSURER_EDGE_SUBNET:-172.30.55.0/24}
+        - subnet: ${ASSURER_EDGE_SUBNET:-172.30.57.0/24}
+  # No route out: only the app, MongoDB and PBM are on it.
+  db:
+    internal: true
+  restore-db:
+    internal: true
+  # For restore-app's loopback port, which an internal network cannot publish.
+  restore-edge:
 
 volumes:
-  mongo-data:
-  secrets:
-  uploads:
+  mongo-db:
+  mongo-secrets:
+  app-secrets:
+  pbm-secrets:
+  pbm-backups:
+  media:
   app-data:
-  backups:
   certs:
   acme-webroot:
-  restore-mongo-data:
-  restore-secrets:
-  restore-uploads:
+  restore-mongo-db:
+  restore-mongo-secrets:
+  restore-app-secrets:
+  restore-pbm-secrets:
+  restore-media:
   restore-app-data:
   restore-backups:

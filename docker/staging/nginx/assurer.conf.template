@@ -10,7 +10,7 @@ server_tokens off;
 limit_req_zone $binary_remote_addr zone=assurer_req:10m rate=${ASSURER_RATE_LIMIT};
 limit_req_status 429;
 
-# Docker's DNS, read again every 10 s, so a recreated site container is found.
+# Docker's DNS, read again every 10 s, so a recreated app container is found.
 resolver 127.0.0.11 valid=10s ipv6=off;
 
 # HTTP: certificate challenges, and a redirect to HTTPS for everything else.
@@ -58,7 +58,7 @@ server {
   location / {
     limit_req zone=assurer_req burst=${ASSURER_RATE_BURST} nodelay;
 
-    set $assurer_site http://site:3000;
+    set $assurer_site http://app:3000;
     proxy_pass $assurer_site;
     proxy_http_version 1.1;
     proxy_set_header Host $host;

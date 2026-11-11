@@ -1,4 +1,4 @@
-# PBM configuration for staging (m1-055). Backups go to the container's
+# PBM configuration for the stack (m1-055). Backups go to the pbm service's
 # /backups volume only, on the same server: not an off-site backup. The S3
 # storage waits for its tests (D-DB-12). No storage credentials here.
 # Guide: docs/runbooks/pbm-backup-and-restore.md

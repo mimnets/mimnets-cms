@@ -1,46 +1,63 @@
-# Runbook: the staging stack (one site container, nginx, certbot)
+# Runbook: the stack (one container per service, nginx, certbot)
 
 | | |
 |---|---|
-| **Status** | **Draft; built and run on the owner's PC (`amd64`) and on a hosted GitHub runner (`arm64`) only** (`m1-055` to `m1-058`, agent-executed): see §8 for what was run and what was not. **m1-063: started in NPM mode on the owner's OCI server (`arm64`, Ubuntu 22.04, kernel 6.8) with §9.2's script, private (no domain, NPM not joined)**; not yet reached through NPM. **m1-064: the interactive installer (§10), tested locally only.** **m1-065: IP mode (§11), plain HTTP on the public address before go-live.** Running it on a server needs the owner's approval (D-DB-2, D-DB-3, D-DB-7 and the server task) |
-| **Purpose** | The staging version of the one-container image (ADR-0004 Decision 2, D-DB-10 (b)): app and MongoDB 8.0.34 in one container with TLS, member authentication, PBM, no demo content and no default password; nginx and certbot in their own containers |
+| **Status** | **Draft; built and run on the owner's PC (`amd64`) and on a hosted GitHub runner (`arm64`) only** (`m1-055` to `m1-058`, agent-executed): see §8 for what was run and what was not. **m1-063: started in NPM mode on the owner's OCI server (`arm64`, Ubuntu 22.04, kernel 6.8) with §9.2's script, private (no domain, NPM not joined)**; not yet reached through NPM. **m1-064: the interactive installer (§10), tested locally only.** **m1-065: IP mode (§11), plain HTTP on the public address before go-live.** **m1-068: one container per service (D-DB-20) and images from `ghcr.io` (D-DB-21, §12); built and tested locally on `amd64`, not yet on a server.** Running it on a server needs the owner's approval (D-DB-2, D-DB-3, D-DB-7 and the server task) |
+| **Purpose** | The site's stack (ADR-0004 Decision 2, Amendment 1; D-DB-20): the app, MongoDB 8.0.34 with TLS and member authentication, PBM and its schedule, nginx and certbot, each in its own container; no demo content and no default password |
 | **Not for** | Production as it stands: production needs x.509 member authentication (hardening runbook §12 choice 2), the S3 backup storage (D-DB-12) and `APOS_ALLOW_INDEXING=1` |
-| **Files** | [`docker/staging/`](../../docker/staging/): `compose.yaml`, `compose.npm.yaml` (§9), `Dockerfile`, `entrypoint.sh`, `run-as.sh`, `mongod.conf`, `pbm-config.yaml`, `pbmc.sh`, `assurer-task.sh` (§4.1), `host-facts.sh` (§9.1), `npm-setup.sh` (§9.2), `install.sh` (§10), `compose.ip.yaml` and `ip-setup.sh` (§11), `nginx/`, `certbot/` |
+| **Files** | [`docker/staging/`](../../docker/staging/): `compose.yaml`, `compose.build.yaml` (local builds), `compose.npm.yaml` (§9), `compose.ip.yaml` (§11), `app/Dockerfile`, `mongo/Dockerfile`, `setup.sh`, `mongo-entrypoint.sh`, `mongo-health.sh`, `app-entrypoint.sh`, `app-env.sh`, `pbm-agent.sh`, `pbm-env.sh`, `backup-schedule.sh`, `run-as.sh`, `mongod.conf`, `pbm-config.yaml`, `pbmc.sh`, `assurer-task.sh` (§4.1), `deploy.sh` (§12), `host-facts.sh` (§9.1), `npm-setup.sh` (§9.2), `install.sh` (§10), `ip-setup.sh` (§11), `nginx/`, `certbot/` |
 | **Related** | [hardening runbook](./server-hardening-and-patching.md) §6–§8 · [PBM runbook](./pbm-backup-and-restore.md) · [HTTP security and HTTPS proxy](./security-configuration.md) · [demo container](./docker-single-container.md) · [m1-054 cluster results](../milestones/m1-054-cluster-mode-results.md) |
 
 > **Setting up a server for the first time? Start at [§11, IP mode](#11-ip-mode-the-site-on-the-public-address-before-go-live-m1-065).**
 > As root on the server: `git clone` the repository (or `git pull` in the clone), then
 > `bash docker/staging/ip-setup.sh <public-ip>`. The site opens at `http://<public-ip>:8090`; the
-> domain, NPM and Cloudflare follow at go-live (§11.4). Works on `arm64` and `amd64`: the images are
-> built on the server itself.
+> domain, NPM and Cloudflare follow at go-live (§11.4). Works on `arm64` and `amd64`. Since m1-068 the
+> server pulls the images CI built for the clone's commit (`docker login ghcr.io` once, §12.1); it
+> no longer builds them. **A server running the one-container stack of m1-055 to m1-067: §12.3.**
 
 ## 1. Layout
 
+Compose project `mimnets-cms` (m1-068; the containers are `mimnets-cms-<service>-1`). Images from
+`ghcr.io/mimnets/`, tagged with the commit (§12).
+
 | Container | Image | Holds | Host ports |
 |---|---|---|---|
-| `site` | `assurer-site:staging`, built from the root `Dockerfile` plus `docker/staging/Dockerfile` | Apostrophe (`APOS_CLUSTER_PROCESSES`, default 2), MongoDB with `requireTLS`, `pbm-agent`, the base-backup schedule | **none** |
-| `nginx` | `assurer-nginx:staging`, official `nginx:1.30.6-alpine` (digest pinned) plus zlib 1.4, without the xslt and njs modules and `libxml2` | TLS, HTTP redirect, upload limit, rate limit | `80`, `443` |
-| `certbot` | `assurer-certbot:staging`, official `certbot/certbot:v5.9.0` (digest pinned) plus zlib 1.4 | certificate renewal | none |
-| `cert-bootstrap` (one-off) | the site image | a 30-day self-signed certificate if none exists, so nginx can start | none |
+| `setup` (one-shot, each start) | `assurer-mongo` | writes the missing secrets and the MongoDB TLS files into each service's secrets volume, then exits | none, no network |
+| `mongo` | `assurer-mongo`: official `mongo:8.0.34` (digest pinned) plus PBM 2.17.0 and the project's scripts, without `gosu` and `js-yaml` | MongoDB with `requireTLS`, key-file member authentication, one-member replica set `mongo:27017`; creates its users at each start if missing | **none** |
+| `pbm` | `assurer-mongo` | `pbm-agent`, as the `pbm` user | none |
+| `backup` | `assurer-mongo` | the PBM configuration and the base-backup schedule, as the `pbm` user | none |
+| `app` | `assurer-app`: the root `Dockerfile`'s build on `node:24-bookworm-slim` (digest pinned), without npm | Apostrophe (`APOS_CLUSTER_PROCESSES`, default 2), as the `assurer` user; runs the migrations at start | **none** (IP mode: one port) |
+| `nginx` | `assurer-nginx`: official `nginx:1.30.6-alpine` (digest pinned) plus zlib 1.4, without the xslt and njs modules and `libxml2` | TLS, HTTP redirect, upload limit, rate limit | `80`, `443` |
+| `certbot` | `assurer-certbot`: official `certbot/certbot:v5.9.0` (digest pinned) plus zlib 1.4 | certificate renewal | none |
+| `cert-bootstrap` (one-shot) | `assurer-mongo` | a 30-day self-signed certificate if none exists, so nginx can start | none |
 
-nginx reaches the site on the `edge` Compose network (`172.30.55.0/24` by default; change
-`ASSURER_EDGE_SUBNET` and `ASSURER_NGINX_IP` together if that range is taken). The app trusts the
-`X-Forwarded-*` headers from nginx's fixed address only.
+Start order: `setup` completes → `mongo` healthy (writable primary, users checked) → `app` and `pbm`
+→ `backup`. nginx waits only for `cert-bootstrap`.
 
-Volumes: `mongo-data`, `secrets`, `uploads`, `app-data`, `backups` (site); `certs`, `acme-webroot`
-(nginx and certbot). They live under Docker's data directory, which must be on the encrypted data
+Networks: `edge` (nginx and the app; `172.30.57.0/24` by default, changed in m1-068 so it does not
+clash with the one-container stack's network; change `ASSURER_EDGE_SUBNET` and `ASSURER_NGINX_IP`
+together if that range is taken). `db` is internal, with no route out: only the app, `mongo`,
+`pbm` and `backup` are on it. The app trusts the `X-Forwarded-*` headers from nginx's fixed address
+only.
+
+Volumes: `mongo-db`; `mongo-secrets`, `app-secrets`, `pbm-secrets` (each mounted read-only in its
+own service only); `pbm-backups`; `media` (uploads); `app-data` (with the first admin password);
+`certs`, `acme-webroot`. They live under Docker's data directory, which must be on the encrypted data
 volume (hardening runbook §5, §7).
 
 ## 2. Settings
 
 | Variable | Where | Default | Meaning |
 |---|---|---|---|
+| `ASSURER_IMAGE_TAG` | `docker/staging/.env` | required | the release: a commit SHA on `main`; `deploy.sh` writes it (§12), with `ASSURER_PREVIOUS_TAG` |
+| `ASSURER_PROXY_MODE` | `docker/staging/.env` | required by `deploy.sh` | `ip`, `npm` or `standalone`: which Compose files belong to this server; the setup scripts write it |
 | `ASSURER_DOMAIN` | shell or `docker/staging/.env` | required | host name, for example `staging.example.org` |
 | `APOS_BASE_URL` | shell or `docker/staging/.env` | required | `https://` plus the host name, no trailing slash |
 | `APOS_CLUSTER_PROCESSES` | same | `2` | Node web processes (m1-054: 2 doubles the headroom for about 0.6 GiB) |
 | `ASSURER_MONGO_CACHE_GB` | same | `1` | MongoDB cache; size it with the processes against the server's memory |
 | `APOS_HSTS_MAX_AGE` | same | `300` | raise once HTTPS is confirmed (hardening runbook §8 point 4) |
 | `ASSURER_BACKUP_INTERVAL_HOURS`, `ASSURER_BACKUP_RETENTION` | same | `24`, `8d` | PBM base backups ([PBM runbook](./pbm-backup-and-restore.md) §1) |
+| `ASSURER_MONGO_MEMORY`, `ASSURER_APP_MEMORY`, `ASSURER_PBM_MEMORY`, `ASSURER_BACKUP_MEMORY`, `ASSURER_NGINX_MEMORY`, `ASSURER_CERTBOT_MEMORY` | same | `2g`, `2g`, `1g`, `256m`, `256m`, `256m` | memory limit per container; fit them to the server |
 | `ASSURER_MAX_BODY`, `ASSURER_RATE_LIMIT`, `ASSURER_RATE_BURST` | same | `32m`, `30r/s`, `60` | nginx upload limit and per-address rate limit |
 | `ASSURER_HTTP_BIND`, `ASSURER_HTTPS_BIND` | same | `80`, `443` | host ports, on all network interfaces by default; **set `127.0.0.1:80` and `127.0.0.1:443` for a local test**, so the site is not open to the local network (m1-058) |
 | SMTP and form settings | `docker/staging/site.env`, mode `0600`, git-ignored | none | as in [form operations](./form-operations-and-privacy.md) |
@@ -50,23 +67,34 @@ The image sets `NODE_ENV=production` and `APOS_DEMO_SITE=0`. Compose sets `APOS_
 
 ## 3. First start
 
+On a server, use the setup script of the route (§9.2, §10 or §11); each writes `.env` and runs
+`deploy.sh --here`, which pulls this commit's images (§12). By hand:
+
 ```sh
 S="docker compose -f docker/staging/compose.yaml"
-$S build                         # or pull the images built for the release
-$S up -d                         # site, cert-bootstrap, nginx, certbot
-$S logs -f site                  # wait for "Started (site mode, ...)"
+bash docker/staging/deploy.sh   # pull, start, check (needs ASSURER_PROXY_MODE in .env)
+$S logs -f app                   # wait for "Starting (2 web process(es))"
 ```
 
-The first start takes a few minutes and creates, in the `secrets` volume: the database passwords,
-the key file, the session secret, the MongoDB TLS certificate (the CA key is deleted) and a random
-password for the `admin` account. No demo content is loaded.
+On a PC, build instead of pulling (no `deploy.sh`):
+
+```sh
+export ASSURER_IMAGE_TAG=local
+B="docker compose -f docker/staging/compose.yaml -f docker/staging/compose.build.yaml"
+$B build && $B up -d
+```
+
+The first start takes a few minutes. `setup` writes, into the three secrets volumes: the database
+passwords, the key file, the session secret and the MongoDB TLS certificate (the CA key is deleted).
+`mongo` creates the replica set and its users. The app writes a random password for the `admin`
+account to its `app-data` volume. No demo content is loaded.
 
 **First admin login.** Read the password once, log in at `$APOS_BASE_URL/login` as `admin`, change
 the password in the admin UI, then delete the file:
 
 ```sh
-$S exec site cat /data/secrets/admin-initial-password
-$S exec site rm /data/secrets/admin-initial-password
+$S exec app cat /app/data/admin-initial-password
+$S exec app rm /app/data/admin-initial-password
 ```
 
 Do not paste the password into a ticket, chat or document.
@@ -90,9 +118,10 @@ has higher rate limits.
 
 ```sh
 $S ps                            # state and health
-$S logs -f site                  # app, MongoDB, PBM schedule
-$S restart site                  # restart the site; data stays
-$S up -d --build                 # release: rebuild, recreate what changed, migrations run first
+$S logs -f app                   # the app; also mongo, pbm, backup, nginx
+$S restart app                   # restart the app; MongoDB keeps running
+$S restart mongo && $S restart app pbm backup   # restart the database and its clients
+bash docker/staging/deploy.sh    # release: pull, back up, recreate what changed (§12)
 ```
 
 **Never run `$S down -v`**: it deletes the database, media, secrets, local backups and
@@ -101,15 +130,15 @@ certificates for good.
 ### 4.1 Apostrophe tasks (added m1-067)
 
 `node app <task>` needs the database address and the session secret, which only the entrypoint
-builds from the secrets volume. `assurer-task` does the same for one command: it reads the
-secrets, passes them through the environment (never the command line) and runs the task as the
-`assurer` user in `/app`, like `pbmc` does for PBM.
+builds from the app's secrets volume. `assurer-task` does the same for one command: it reads the
+secrets, passes them through the environment (never the command line) and runs the task in the
+`app` container, like `pbmc` does for PBM in the `pbm` container.
 
 ```sh
-$S exec site assurer-task assurer-wp-import:run              # WordPress import: dry run, writes nothing
-$S exec site assurer-task assurer-wp-import:run --execute    # writes drafts (docs/content/wordpress-import-design.md)
-$S exec site assurer-task assurer-seo:seed-redirects         # legacy redirects, after publishing
-$S exec site assurer-task @apostrophecms/user:add <name> editor   # asks for the password
+$S exec app assurer-task assurer-wp-import:run              # WordPress import: dry run, writes nothing
+$S exec app assurer-task assurer-wp-import:run --execute    # writes drafts (docs/content/wordpress-import-design.md)
+$S exec app assurer-task assurer-seo:seed-redirects         # legacy redirects, after publishing
+$S exec app assurer-task @apostrophecms/user:add <name> editor   # asks for the password
 ```
 
 Use `exec -T` from a script. A task runs next to the live site on the same database; tasks that
@@ -120,27 +149,32 @@ write say so, and the import changes only drafts.
 ```sh
 curl -sI http://$ASSURER_DOMAIN/            # 301 to https
 curl -sI https://$ASSURER_DOMAIN/           # 200, Strict-Transport-Security, no Server version
-$S exec site pbmc status                    # agent running, PITR on
+$S exec pbm pbmc status                     # agent running, PITR on
 ```
 
 Then the hardening runbook §11 checks.
 
 ## 6. Rotating secrets
 
+The source of each database secret is the `mongo-secrets` volume; `setup` copies the app's and
+PBM's values into their volumes at each start when they differ.
+
 - **Admin account:** in the admin UI.
-- **Session secret:** replace `/data/secrets/session-secret` with a new random hex value and restart
-  the site; every user is logged out.
+- **Session secret:** replace `session-secret` in the `app-secrets` volume with a new random hex
+  value and recreate the app; every user is logged out.
 - **Database passwords** (`assurerApp`, `pbm`): change the user's password as `siteAdmin` in
-  `mongosh` inside the container, write the same value to the matching file in `/data/secrets`, then
-  restart the site. Take a base backup after the change, because a restore needs the passwords that
-  were current when its backup was taken.
-- **MongoDB TLS certificate:** delete `/data/secrets/tls/` and restart the site; a new CA and
-  certificate are made.
+  `mongosh` in the `mongo` container, write the same value to the matching file in the
+  `mongo-secrets` volume, then `$S up -d` (setup copies it) and restart the app or `pbm` and
+  `backup`. Take a base backup after the change, because a restore needs the passwords that were
+  current when its backup was taken.
+- **MongoDB TLS certificate:** `setup` makes a new CA and certificate when fewer than 30 days are
+  left; `deploy.sh` then restarts `mongo` and its clients (§12). To force it, delete `tls/` in the
+  `mongo-secrets` volume and run `deploy.sh` again.
 
 ## 7. Known limits
 
 - **MongoDB 8.0 refuses Linux kernels 6.19 to 7.0.13, on any CPU** (m1-058, SERVER-121912): the site
-  container restarts in a loop, the log shows `[assurer] MongoDB did not start`, and MongoDB's own line
+  `mongo` container restarts in a loop, the log shows `[assurer] MongoDB did not start`, and MongoDB's own line
   says `MongoDB cannot start: Linux kernel versions 6.19 and newer ...`. The kernel belongs to the host,
   so check `uname -r` before starting, and after any kernel or Docker Desktop update. MongoDB's fix is
   kernel 7.0.14 or later, but Ubuntu reports its 7.0 kernels as `7.0.0-<ABI>`, and the exemption for
@@ -148,13 +182,13 @@ Then the hardening runbook §11 checks.
   D-DB-16 (decided m1-059): servers stay on Ubuntu 24.04's 6.8 kernel line; see the hardening runbook
   §4.
 - A build needs a lot of memory on a PC: `amd64` fell from 6.5 GB available to 137 MB in m1-058, even
-  with most steps cached. `arm64` under emulation was not tried there; use the hosted workflow
-  (`.github/workflows/staging-arm64.yml`). It also leaves the three images as a one-day artifact
-  for a scan (`docker scout cves archive://<file>.tar`, m1-060).
+  with most steps cached. Servers no longer build (§12). `arm64` under emulation was not tried on a
+  PC; use the hosted workflow (`.github/workflows/staging-arm64.yml`). It also leaves the four images
+  as a one-day artifact for a scan (`docker scout cves archive://<file>.tar`, m1-060).
 - The PBM backups are on the same server ([PBM runbook](./pbm-backup-and-restore.md)).
 - No alert on backup status, certificate renewal or the site (hardening runbook §12 choice 8, not
   chosen yet).
-- One container puts the app and MongoDB on one failure and update cycle (ADR-0004, Negative).
+- Rolling back across a release that added an Apostrophe migration needs a PITR restore (§12.2).
 - The self-signed certificate from `cert-bootstrap` lasts 30 days; if no real certificate is issued
   by then, browsers and nginx keep using an expired one.
 
@@ -185,6 +219,23 @@ project on `127.0.0.1`. Full results: [m1-055 report](../engineering/reports/202
 | NPM mode (§9) on `amd64`, behind a throwaway nginx stand-in for NPM, visitors on a non-private test subnet: no host port; visitor address in nginx's log and the app's `req.ip`; spoofed `X-Real-IP` and `X-Forwarded-For` ignored; a rogue sender on the NPM network not trusted; other host names 444; rate limit and form limit per visitor; HSTS once; `Secure` cookie; 413 at 34 MB; 5 MB SHA-256 identical; Chrome as an editor (login, edit, draft hidden, publish, media upload); standalone mode unchanged | PASS (`m1-062`). **Not tested with NPM itself, on a server, over IPv6, or with a real certificate** |
 | `install.sh` (§10) on `amd64` (Git Bash, Docker Desktop), disposable projects on `127.0.0.1`, the kernel and terminal checks changed only in a temporary copy: route A through steps 0 to 8 and again over the running stack; route B through `npm-setup.sh` and step 7 against a throwaway nginx standing in for NPM (not joined, then joined); `--step`, `--check` with and without a terminal, quitting, end of input, a bad domain, a busy port, settings without a route; HTTPS 200, redirect, HSTS once, `Secure` cookie, 413, PBM; the forged `X-Real-IP` ignored | PASS (`m1-064`). **Not tested: a server, NPM itself, Let's Encrypt (both routes), the NPM backup's mode check (NTFS), Cloudflare** |
 
+**m1-068 (one container per service, project `mimnets-cms`)**, agent-executed on the owner's PC
+(`linux/amd64`, Docker Desktop), stack on `127.0.0.1`; full results in the
+[m1-068 report](../engineering/reports/2026/11/2026-11-11-m1-068-release-pipeline.report.md):
+
+| Check | Result |
+|---|---|
+| Build from `compose.build.yaml`; first start: secrets, replica set `mongo:27017`, users, PBM configured, first base backup; app healthy | PASS |
+| No demo notice; `noindex`; `admin`/`admin` refused (400); random password logs in (200); none of five secret values in any log; no CA key on disk; each secrets volume owned by its service only | PASS |
+| HTTP redirect, HTTPS with HSTS, 413 at 34 MB, 429 under load, `pbmc status` OK | PASS |
+| MongoDB refuses non-TLS and unauthenticated clients; publishes no port; `db` network internal | PASS |
+| Smoke 18/18, workflow 15/15, persistence 7/7 (after restarting `mongo`, then its clients) through nginx, with demo content seeded and `APOS_DEMO_SITE=1` for the test only | PASS |
+| App recreated: MongoDB not restarted; a web worker killed: respawned, 0 of 20 requests failed; `pbm-agent` exits: restarted by Docker | PASS |
+| PITR restore with the restore services (PBM runbook §3): a page published after the newest base backup and a 1 MB upload are back; 35 s from the copy to a working site | PASS |
+| Chrome as an editor (not an administrator), through nginx over HTTPS: login, in-context edit, draft hidden from visitors, publish public, image upload, session kept across an app recreate | PASS (the owner clicked through the certificate warning) |
+| `deploy.sh` guards and git paths: kernel, no `.env`, no route, changed clone, unknown commit, commit not on `main`, older commit without `--rollback`, failed pull leaves clone and `.env` unchanged | PASS (kernel check passed with a stub; in a throwaway clone) |
+| `deploy.sh` pull and start from `ghcr.io`; `ip-setup.sh`, `npm-setup.sh`, `install.sh` with it; the release job; `arm64` of the split stack; a server | NOT TESTED (needs the first release on `main`; the `arm64` workflow runs on the PR) |
+
 ## 9. NPM mode (shared host, D-DB-17 option B)
 
 For a host where Nginx Proxy Manager (NPM) already owns ports 80 and 443, such as the owner's OCI
@@ -195,7 +246,7 @@ against a stand-in for NPM, not against NPM itself (§8). Started on the owner's
 (§9.2), not yet behind NPM.
 
 ```
- Internet ──► :80/:443 NPM ──assurer-npm (172.30.56.0/24)──► nginx :8080 ──edge──► site:3000
+ Internet ──► :80/:443 NPM ──assurer-npm (172.30.56.0/24)──► nginx :8080 ──edge──► app:3000
                TLS, certificate     NPM 172.30.56.2              real_ip from NPM only
 ```
 
@@ -234,7 +285,7 @@ What changes against the standalone mode:
 ```sh
 S="docker compose -f docker/staging/compose.yaml -f docker/staging/compose.npm.yaml"
 $S config | grep -c published   # 0 in NPM mode (2 in standalone mode)
-$S up -d                         # site, cert-bootstrap, nginx; no certbot
+$S up -d                         # the stack with cert-bootstrap and nginx; no certbot
 $S logs nginx | grep assurer-npm  # "NPM mode: port 8080, X-Real-IP trusted from <NPM address> only"
 ```
 
@@ -321,7 +372,8 @@ older than 2.24, or if a standalone stack is there. Then it:
 1. creates the `assurer-npm` network (`172.30.56.0/24`, internal) if missing, or checks the existing one;
 2. writes `docker/staging/.env` (git-ignored, mode `0600`) once, with the placeholder domain
    `assurer.invalid` and NPM's address `172.30.56.2`; it never overwrites the file;
-3. checks that the stack publishes no host port, builds the images and starts the stack;
+3. checks that the stack publishes no host port, then pulls and starts the clone's release
+   (`deploy.sh --here`, §12);
 4. waits up to 10 minutes for a 200 from the site on nginx's internal port 8080, and prints how to
    read the first admin password (§3).
 
@@ -333,7 +385,7 @@ older than 2.24, or if a standalone stack is there. Then it:
    (**Stacks →** the stack **→ Editor → Update the stack**), not in the file on disk. Updating
    recreates NPM: every site behind it is down for a moment. First copy the stack text and back up
    NPM's `data` folder and certificates.
-3. Set the domain; this recreates `site` and `nginx`:
+3. Set the domain; this recreates `app` and `nginx`:
    `bash docker/staging/npm-setup.sh --domain <host name>`
 4. NPM proxy host for the host name (§9 owner's step 3), Let's Encrypt staging certificate first.
    Corrected in m1-064: NPM has no staging certificate per proxy host, so it is the real one (§10).
@@ -358,8 +410,8 @@ S="docker compose -f docker/staging/compose.yaml -f docker/staging/compose.npm.y
 
 # 1. Look first: what will go
 $S ps -a
-docker volume ls --format '{{.Name}}' | grep -E '^(assurer-staging|assurer)_'
-docker image ls --format '{{.Repository}}:{{.Tag}}  {{.Size}}' | grep '^assurer-'
+docker volume ls --format '{{.Name}}' | grep -E '^(assurer-staging|mimnets-cms|assurer)_'
+docker image ls --format '{{.Repository}}:{{.Tag}}  {{.Size}}' | grep -E '^(ghcr.io/mimnets/)?assurer-'
 
 # 2. The test stack: containers, its networks and volumes
 $S down -v --remove-orphans
@@ -368,12 +420,12 @@ docker compose down -v
 # 4. The shared network (only after the stack is down; NPM must not be joined to it)
 docker network rm assurer-npm
 # 5. The images (frees several GB) and the settings file
-docker image rm $(docker image ls --format '{{.Repository}}:{{.Tag}}' | grep '^assurer-')
+docker image rm $(docker image ls --format '{{.Repository}}:{{.Tag}}' | grep -E '^(ghcr.io/mimnets/)?assurer-')
 rm -f docker/staging/.env
 
 # 6. Check: no output from these three
 docker ps -a --format '{{.Names}}' | grep assurer
-docker volume ls --format '{{.Name}}' | grep -E '^(assurer-staging|assurer)_'
+docker volume ls --format '{{.Name}}' | grep -E '^(assurer-staging|mimnets-cms|assurer)_'
 docker network ls --format '{{.Name}}' | grep assurer
 ```
 
@@ -383,7 +435,7 @@ for a later run or be deleted (§9.1 A step 7).
 
 ## 10. Interactive install (m1-064)
 
-One script for a server: it builds and starts the stack, checks it, then guides the owner one step at
+One script for a server: it starts the stack (pulling the clone's release since m1-068), checks it, then guides the owner one step at
 a time through the public address, the domain, the certificate and the final checks. Design and
 decision: [m1-064 paper](../milestones/m1-064-installer-design.md) (D-DB-18). Tested locally only
 (§8); not yet run on a server.
@@ -418,7 +470,7 @@ the domain. A real certificate already in place skips step 7.
 | 0 Host checks, read-only | Stops if the kernel is not on the 6.8 line (D-DB-16) or Compose is older than 2.24. Warns on the branch, local changes, an older clone and under 15 GB free disk. Shows ports 80, 81 and 443, NPM and existing `assurer` containers | same |
 | 1 Route | Recommended when ports 80 and 443 are free and no NPM runs | Recommended when NPM runs. If something else owns 80 or 443, the script stops |
 | 2 Settings | Writes `.env` once (mode `0600`): domain (Enter keeps the placeholder `assurer.invalid` until step 6), web processes, MongoDB cache (§2) | same, plus `ASSURER_UPSTREAM_PROXY_IP=172.30.56.2` |
-| 3 Build and start | `$S build`, `$S up -d`, waits for a 200 | runs `npm-setup.sh` (§9.2) |
+| 3 Pull and start | `deploy.sh --here` (§12), waits for a 200 | runs `npm-setup.sh` (§9.2) |
 | 4 Check on the server | HTTPS 200 and HTTP 301 through the stack's nginx; shows the first admin login (§3) | 200 on nginx's port 8080; same login text |
 | 5 Public address | From the PC with `curl.exe --resolve`; if it fails, the OCI security list path and `iptables -S DOCKER-USER` (read-only) | does not apply: nothing is published |
 | 6 Domain and Cloudflare | Sets the domain in `.env`, `up -d`; shows the Cloudflare record (§9.1 A, **DNS only**); checks the DNS answer, and names a Cloudflare address as an orange cloud | `npm-setup.sh --domain`; the same record and check |
@@ -448,7 +500,7 @@ set up the content there, and switch to the domain later. The WordPress site kee
 until go-live. One script, safe to run again. It never touches NPM or another container.
 
 ```
- Internet ──► http://<public-ip>:8090 ──► site:3000        (no nginx, no NPM, no TLS)
+ Internet ──► http://<public-ip>:8090 ──► app:3000         (no nginx, no NPM, no TLS)
 ```
 
 **Read this first.** IP mode is **plain HTTP**: the admin password and every page cross the internet
@@ -471,7 +523,8 @@ The public IP is in the OCI console: **Compute → Instances →** the instance 
 The script stops, before it changes anything, if the kernel is not on the 6.8 line (D-DB-16), if a
 standalone stack is there, or if the port is in use (§11.2). Then it writes `docker/staging/.env`
 (git-ignored, mode `0600`; the same keys as §9.2, plus `ASSURER_PUBLIC_IP` and `ASSURER_IP_PORT`),
-builds and starts the site, waits for a 200 and prints the next steps.
+pulls and starts the clone's release (`deploy.sh --here`, §12), waits for a 200 and prints the
+next steps. The first time, run `docker login ghcr.io` before it (§12.1).
 
 **Open the port** (the owner's change, OCI console): **Networking → Virtual cloud networks →** the
 VCN **→ Security Lists → Default Security List → Add Ingress Rules**: Source CIDR `0.0.0.0/0`, IP
@@ -483,7 +536,7 @@ changed in the admin UI:
 
 ```sh
 docker compose -f docker/staging/compose.yaml -f docker/staging/compose.ip.yaml \
-  exec site cat /data/secrets/admin-initial-password
+  exec app cat /app/data/admin-initial-password
 ```
 
 ### 11.2 When the port is already in use
@@ -504,11 +557,11 @@ ingress rule to match and remove the old one.
 
 ```sh
 S="docker compose -f docker/staging/compose.yaml -f docker/staging/compose.ip.yaml"
-$S ps           # site running (healthy)
-$S logs site    # the app's log
-$S restart site
-$S stop site    # stops the site; data stays in the volumes
-$S exec site assurer-task assurer-wp-import:run   # any Apostrophe task (§4.1); this one is a dry run
+$S ps           # app and mongo running (healthy)
+$S logs app     # the app's log
+$S restart app
+$S stop         # stops the stack; data stays in the volumes
+$S exec app assurer-task assurer-wp-import:run   # any Apostrophe task (§4.1); this one is a dry run
 ```
 
 Never run `$S down -v`: it deletes the database, media, secrets and backups (§9.3).
@@ -522,9 +575,69 @@ content is ready.
 1. Cloudflare: change the domain's record to an `A` record with the server's IPv4, **DNS only** (§9.1 A).
 2. NPM joins `assurer-npm` at `172.30.56.2` (§9 owner's step 2, §9.2 "Later" step 2).
 3. `bash docker/staging/npm-setup.sh --domain <host name>`. This removes the public port from the
-   site, starts nginx in NPM mode and switches the site to `https://<host name>`.
+   app, starts nginx in NPM mode and switches the site to `https://<host name>`.
 4. NPM proxy host for the host name (§9 owner's step 3), real Let's Encrypt certificate (§10).
 5. Remove the OCI ingress rule for port 8090. Change the admin password again.
 6. The checks after a start (§9).
 
 Not yet run on a server (m1-065 records the result).
+
+## 12. Releases: images from `ghcr.io` (m1-068, D-DB-21)
+
+CI builds the four images for each commit on `main` after every check passes, on native `amd64` and
+`arm64` runners. It starts the stack and checks it on each architecture, then pushes the images as
+private packages. The tag `<commit SHA>` exists only when both architectures passed. The server
+never builds; `deploy.sh` pulls a release and starts it. Design:
+[m1-068 design note](../milestones/m1-068-release-pipeline-design.md).
+
+```sh
+bash docker/staging/deploy.sh                 # the newest commit on origin/main
+bash docker/staging/deploy.sh <commit>        # a given commit on main
+```
+
+It moves the clone to the commit (detached), so the Compose files match the images; pulls them,
+and if that fails, changes nothing; takes a PBM base backup if the stack runs (a PITR point just
+before the release); writes `ASSURER_IMAGE_TAG` (and `ASSURER_PREVIOUS_TAG`) to `.env`; runs `up -d`,
+which recreates only what changed (**an app release does not restart MongoDB**); restarts `mongo`
+and its clients if `setup` made a new MongoDB certificate; waits for the app and `pbm-agent`, then
+prints the image digests and the rollback command. After a deploy the clone is on a detached
+commit: use `deploy.sh`, not `git pull`, to move it.
+
+### 12.1 The pull token (once per server; the owner's step)
+
+The packages are private, so the server signs in once with a GitHub token that can only read them.
+At the time of writing, GitHub's container registry accepts a *classic* personal access token:
+
+1. GitHub → **Settings → Developer settings → Personal access tokens → Tokens (classic) →
+   Generate new token (classic)**: note `mimnets-cms server pull`, expiry one year (set a
+   reminder), scope **`read:packages` only**.
+2. On the server, as root: `docker login ghcr.io -u <github user> --password-stdin`, paste the
+   token, press Enter, then Ctrl-D. Docker keeps it in `/root/.docker/config.json` (mode `0600`).
+3. Never put the token in the clone, `.env`, a script, a log or a chat. To replace it, sign in again;
+   to revoke it, delete it on GitHub.
+
+### 12.2 Rollback
+
+```sh
+bash docker/staging/deploy.sh <ASSURER_PREVIOUS_TAG from .env> --rollback
+```
+
+`deploy.sh` refuses an older commit without `--rollback`. **Apostrophe migrations only go forward:**
+if a release after the target added one (the PR says so), the older code meets data it did not
+write. Then also restore the database to the backup `deploy.sh` took before that release (PBM
+runbook §4), with its media.
+
+### 12.3 From the one-container stack (once per server)
+
+For a server that runs the one-container stack (project `assurer-staging`, m1-055 to m1-067). The
+new stack has its own volumes; nothing old is reused or deleted. **A fresh start: the content is
+not carried over** (D-DB-22); run the WordPress import again afterwards.
+
+1. `git pull` in the clone (on `main`), and `docker login ghcr.io` (§12.1).
+2. Run the setup script of the route again with `--switch-from-one-container`, for example
+   `bash docker/staging/ip-setup.sh <public-ip> 8090 --switch-from-one-container`. Through
+   `deploy.sh`, it takes a base backup in the old `site` container, stops the old containers (their
+   volumes stay), and starts the new stack.
+3. New admin password (§3); the WordPress import again: a dry run, then `--execute` (§4.1).
+4. The old volumes (`assurer-staging_*`) stay as the fallback. Removing them is a later step with
+   its own approval, after the new site is checked.

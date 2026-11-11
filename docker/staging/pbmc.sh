@@ -1,7 +1,6 @@
 #!/bin/bash
-# Runs the pbm CLI as the pbm user with its credentials, for docker exec
-# (m1-055). The credentials go through the environment, not the arguments.
+# Runs the pbm CLI with the pbm user's credentials (m1-055), for docker exec
+# into the pbm service: `$S exec pbm pbmc status` (m1-068).
 set -euo pipefail
-PBM_MONGODB_URI="mongodb://pbm:$(cat /data/secrets/mongo-pbm-password)@127.0.0.1:27017/?authSource=admin&replicaSet=rs0&tls=true&tlsCAFile=/data/secrets/tls/ca.pem"
-export PBM_MONGODB_URI
-exec assurer-run-as pbm pbm "$@"
+. /usr/local/lib/assurer/pbm-env.sh
+exec pbm "$@"
