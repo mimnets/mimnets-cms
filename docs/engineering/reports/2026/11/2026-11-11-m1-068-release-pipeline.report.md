@@ -127,3 +127,25 @@ cannot operate.
 - The disposable editor `m1068-editor` existed only in that local database.
 - Scratch files outside the repository: drill scripts, the editor password, a `uname` stub.
 - `m1-067-test_edge` network and the `m1-067-test` project from m1-067: not touched.
+
+## Follow-up: the first release push (2026-11-11, branch `fix/m1-068-ghcr-push`)
+
+The first `release` run on `main` (merge `44ffb1b`, PR #81) built and checked the stack on `arm64`,
+logged in to `ghcr.io` and pushed `assurer-app` and `assurer-mongo` (tag `<sha>-arm64`), then
+stopped at `assurer-nginx` with `unknown blob`. The `amd64` job was cancelled with it, and
+`release-tag` did not run, so no `<sha>` tag exists and nothing can be deployed from that run. The
+`staging-arm64` run on the PR built, saved and ran the same images, so they were complete on the
+runner. The two images that went through are single layers of our own; nginx and certbot kept the
+official images' layers.
+
+Fix (the owner chose "Flatten + retry"): nginx and certbot are flattened like app and mongo, with
+the base images' settings declared again (environment, entrypoint, command, stop signal, working
+directory, ports, volumes), and each push is tried up to 3 times.
+
+| Check (agent-executed, owner's PC, `amd64`) | Result |
+|---|---|
+| nginx: 1 layer; entrypoint, command, `SIGQUIT` as the base; `/docker-entrypoint.d` scripts run; `nginx -t`; reload; stop exits 0; start again 200 | PASS |
+| Through the stack: 301 to HTTPS, 200 with HSTS, 413 at 34 MB, 201 of 300 parallel requests 429, other host name refused (HTTP: connection closed; HTTPS with its SNI: handshake rejected) | PASS |
+| certbot: 2 layers of our own; `certbot --version` 5.9.0; `certbot renew` with no certificate | PASS |
+| Docker Scout: nginx 0 critical, 1 high; certbot 0 critical, 13 high | Unchanged |
+| The push to `ghcr.io` | NOT TESTED: runs on the merge to `main` |
