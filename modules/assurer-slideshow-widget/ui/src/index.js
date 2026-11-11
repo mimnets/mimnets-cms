@@ -15,6 +15,10 @@ export default () => {
       const interval = Math.max(3000, parseInt(el.dataset.interval, 10) || 6000);
       let current = 0;
       let timer = null;
+      // Autoplay runs only while nothing holds it: the pointer over the
+      // slideshow, or keyboard focus inside it (m1-066). Before, the pointer
+      // leaving restarted it even with focus still inside.
+      const holds = new Set();
 
       const show = (index) => {
         current = (index + slides.length) % slides.length;
@@ -33,7 +37,7 @@ export default () => {
         timer = null;
       };
       const start = () => {
-        if (autoplay && !timer) {
+        if (autoplay && !timer && !holds.size) {
           // Editing re-renders the widget and detaches this element; stop
           // the old timer rather than leaking it.
           timer = setInterval(
@@ -56,10 +60,23 @@ export default () => {
         }
       });
       // Pause while the visitor is interacting.
-      el.addEventListener('mouseenter', stop);
-      el.addEventListener('mouseleave', start);
-      el.addEventListener('focusin', stop);
-      el.addEventListener('focusout', start);
+      const hold = (reason) => {
+        holds.add(reason);
+        stop();
+      };
+      const release = (reason) => {
+        holds.delete(reason);
+        start();
+      };
+      el.addEventListener('mouseenter', () => hold('pointer'));
+      el.addEventListener('mouseleave', () => release('pointer'));
+      el.addEventListener('focusin', () => hold('focus'));
+      el.addEventListener('focusout', (e) => {
+        // Moving focus between the slideshow's own controls keeps it held.
+        if (!el.contains(e.relatedTarget)) {
+          release('focus');
+        }
+      });
 
       show(0);
       // Turn the fade on after the first frame with the start state (see

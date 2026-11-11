@@ -21,6 +21,9 @@
 //   it, which could send the message twice).
 // - After 30 seconds without an answer the visitor is told the outcome is
 //   unknown. A late success still switches to the thank-you message.
+// - m1-066: the submission states are explicit (see `setState` below), and
+//   the thank-you message is final: an error from a retry that answers
+//   after a success no longer appears next to it.
 // - m1-019: the spam guard's fill token and honeypot value, rendered by
 //   views/widget.jsx, are sent with the submission (modules/assurer-forms).
 //   reCAPTCHA is not offered, so upstream's `recaptcha.js` (which loads
@@ -99,6 +102,35 @@ export default () => {
       // One key per form fill; renewed only after a confirmed success.
       let submissionKey = newSubmissionKey();
 
+      // Submission state, shown on the wrapper as `data-assurer-form-state`:
+      //   idle    -> sending  the visitor submits
+      //   sending -> idle     an error, or no answer within TIMEOUT_MS
+      //   sending -> sent     the server confirms it stored the message
+      //   idle    -> sent     a late confirmation after a timeout
+      // `sent` is final. Every request of one fill shares the key, so the
+      // server stores the message once, and any answer after `sent` is
+      // ignored.
+      let state = 'idle';
+      const spinner = el.querySelector('[data-apos-form-spinner]');
+      const button = form.querySelector('[data-apos-form-submit]');
+      setState('idle');
+
+      function setState(next) {
+        state = next;
+        el.setAttribute('data-assurer-form-state', next);
+        const sending = next === 'sending';
+        // Upstream's busy marker, kept for compatibility.
+        if (sending) {
+          form.setAttribute('data-apos-form-busy', '1');
+        } else {
+          form.removeAttribute('data-apos-form-busy');
+        }
+        apos.util[sending ? 'addClass' : 'removeClass'](spinner, 'apos-form-visible');
+        if (button) {
+          button.disabled = sending;
+        }
+      }
+
       // If there are specified query parameters to capture, see if fields
       // can be populated.
       if (form.hasAttribute('data-apos-form-params')) {
@@ -115,11 +147,12 @@ export default () => {
           return;
         }
 
-        if (form.hasAttribute('data-apos-form-busy')) {
+        // A second click while sending, or any click after `sent`.
+        if (state !== 'idle') {
           return;
         }
 
-        form.setAttribute('data-apos-form-busy', '1');
+        setState('sending');
 
         let input;
         const formData = new window.FormData();
@@ -144,7 +177,7 @@ export default () => {
         } catch (error) {
           processErrors(error?.data?.formErrors, el);
 
-          form.removeAttribute('data-apos-form-busy');
+          setState('idle');
 
           return;
         }
@@ -155,14 +188,8 @@ export default () => {
 
         // For resubmissions
         const errorMsg = el.querySelector('[data-apos-form-submit-error]');
-        const spinner = el.querySelector('[data-apos-form-spinner]');
         const thankYou = el.querySelector('[data-apos-form-thank-you]');
-        const button = form.querySelector('[data-apos-form-submit]');
         apos.util.removeClass(errorMsg, 'apos-form-visible');
-        apos.util.addClass(spinner, 'apos-form-visible');
-        if (button) {
-          button.disabled = true;
-        }
 
         // Convert to arrays old school for IE.
         const existingErrorInputs = Array.prototype.slice.call(el.querySelectorAll('.apos-form-input-error'));
@@ -238,16 +265,11 @@ export default () => {
           };
         }
 
-        function done() {
-          form.removeAttribute('data-apos-form-busy');
-          apos.util.removeClass(spinner, 'apos-form-visible');
-          if (button) {
-            button.disabled = false;
-          }
-        }
-
         function showSuccess() {
-          done();
+          if (state === 'sent') {
+            return;
+          }
+          setState('sent');
           apos.util.removeClass(errorMsg, 'apos-form-visible');
           submissionKey = newSubmissionKey();
           apos.util.emit(document.body, '@apostrophecms/form:submission-form', {
@@ -259,7 +281,10 @@ export default () => {
         }
 
         function showFailure(message, formErrors) {
-          done();
+          if (state === 'sent') {
+            return;
+          }
+          setState('idle');
           processErrors(formErrors || [ {
             global: true,
             message
