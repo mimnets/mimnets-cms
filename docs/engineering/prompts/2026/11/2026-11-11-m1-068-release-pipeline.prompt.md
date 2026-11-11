@@ -17,3 +17,4 @@ pipeline (D-DB-21) and one container per service in one Compose stack (D-DB-20),
 - D-SEC-10: "Accept until fixed (Recommended)"
 - Commit and push: "Commit and push (Recommended)" (D-GIT-72)
 - After the merge: "i have login with github classic token here now what?"; the first release push had failed ("unknown blob"). Fix: "Flatten + retry (Recommended)"; commit and push: "Commit and push (Recommended)" (D-GIT-73)
+- "i don't see the runbook 12.3 where actually it is?" … "but i don't see any command written like this … on the runbook" … "i approve" (D-GIT-74: §12.3 with the exact commands)
