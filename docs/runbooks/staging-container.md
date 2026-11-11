@@ -633,11 +633,42 @@ For a server that runs the one-container stack (project `assurer-staging`, m1-05
 new stack has its own volumes; nothing old is reused or deleted. **A fresh start: the content is
 not carried over** (D-DB-22); run the WordPress import again afterwards.
 
-1. `git pull` in the clone (on `main`), and `docker login ghcr.io` (§12.1).
-2. Run the setup script of the route again with `--switch-from-one-container`, for example
-   `bash docker/staging/ip-setup.sh <public-ip> 8090 --switch-from-one-container`. Through
-   `deploy.sh`, it takes a base backup in the old `site` container, stops the old containers (their
-   volumes stay), and starts the new stack.
-3. New admin password (§3); the WordPress import again: a dry run, then `--execute` (§4.1).
-4. The old volumes (`assurer-staging_*`) stay as the fallback. Removing them is a later step with
+The commands below are for IP mode (§11), the route of the owner's OCI server. For NPM mode use
+`npm-setup.sh` in step 2 and `compose.npm.yaml` in place of `compose.ip.yaml`.
+
+1. In the clone, as root: `git switch main && git pull`. Sign in to `ghcr.io` once (§12.1).
+2. Run the setup script of the route again with `--switch-from-one-container`:
+
+   ```sh
+   bash docker/staging/ip-setup.sh <public-ip> 8090 --switch-from-one-container
+   ```
+
+   Through `deploy.sh`, it takes a base backup in the old `site` container, stops the old
+   containers (their volumes stay), and starts the new stack. It ends with "Done" and the address.
+3. The new admin password. Read it once, sign in at `http://<public-ip>:8090/login` as `admin`,
+   change it in the admin UI, then delete the file:
+
+   ```sh
+   S="docker compose -f docker/staging/compose.yaml -f docker/staging/compose.ip.yaml"
+   $S exec app cat /app/data/admin-initial-password
+   $S exec app rm /app/data/admin-initial-password
+   ```
+
+4. The WordPress import again (§4.1): read the dry run's report first, then write the drafts.
+
+   ```sh
+   $S exec app assurer-task assurer-wp-import:run              # dry run, writes nothing
+   $S exec app assurer-task assurer-wp-import:run --execute    # writes drafts
+   ```
+
+5. Check: `$S ps` shows `app` and `mongo` healthy; `$S exec pbm pbmc status` shows the agent OK.
+
+   To go back to the old site if something is wrong (its data is untouched):
+
+   ```sh
+   $S stop
+   docker start $(docker ps -aq --filter label=com.docker.compose.project=assurer-staging)
+   ```
+
+6. The old volumes (`assurer-staging_*`) stay as the fallback. Removing them is a later step with
    its own approval, after the new site is checked.
