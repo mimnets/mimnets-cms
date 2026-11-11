@@ -5,7 +5,7 @@
 | **Status** | **Draft; built and run on the owner's PC (`amd64`) and on a hosted GitHub runner (`arm64`) only** (`m1-055` to `m1-058`, agent-executed): see §8 for what was run and what was not. **m1-063: started in NPM mode on the owner's OCI server (`arm64`, Ubuntu 22.04, kernel 6.8) with §9.2's script, private (no domain, NPM not joined)**; not yet reached through NPM. **m1-064: the interactive installer (§10), tested locally only.** **m1-065: IP mode (§11), plain HTTP on the public address before go-live.** Running it on a server needs the owner's approval (D-DB-2, D-DB-3, D-DB-7 and the server task) |
 | **Purpose** | The staging version of the one-container image (ADR-0004 Decision 2, D-DB-10 (b)): app and MongoDB 8.0.34 in one container with TLS, member authentication, PBM, no demo content and no default password; nginx and certbot in their own containers |
 | **Not for** | Production as it stands: production needs x.509 member authentication (hardening runbook §12 choice 2), the S3 backup storage (D-DB-12) and `APOS_ALLOW_INDEXING=1` |
-| **Files** | [`docker/staging/`](../../docker/staging/): `compose.yaml`, `compose.npm.yaml` (§9), `Dockerfile`, `entrypoint.sh`, `run-as.sh`, `mongod.conf`, `pbm-config.yaml`, `pbmc.sh`, `host-facts.sh` (§9.1), `npm-setup.sh` (§9.2), `install.sh` (§10), `compose.ip.yaml` and `ip-setup.sh` (§11), `nginx/`, `certbot/` |
+| **Files** | [`docker/staging/`](../../docker/staging/): `compose.yaml`, `compose.npm.yaml` (§9), `Dockerfile`, `entrypoint.sh`, `run-as.sh`, `mongod.conf`, `pbm-config.yaml`, `pbmc.sh`, `assurer-task.sh` (§4.1), `host-facts.sh` (§9.1), `npm-setup.sh` (§9.2), `install.sh` (§10), `compose.ip.yaml` and `ip-setup.sh` (§11), `nginx/`, `certbot/` |
 | **Related** | [hardening runbook](./server-hardening-and-patching.md) §6–§8 · [PBM runbook](./pbm-backup-and-restore.md) · [HTTP security and HTTPS proxy](./security-configuration.md) · [demo container](./docker-single-container.md) · [m1-054 cluster results](../milestones/m1-054-cluster-mode-results.md) |
 
 > **Setting up a server for the first time? Start at [§11, IP mode](#11-ip-mode-the-site-on-the-public-address-before-go-live-m1-065).**
@@ -97,6 +97,23 @@ $S up -d --build                 # release: rebuild, recreate what changed, migr
 
 **Never run `$S down -v`**: it deletes the database, media, secrets, local backups and
 certificates for good.
+
+### 4.1 Apostrophe tasks (added m1-067)
+
+`node app <task>` needs the database address and the session secret, which only the entrypoint
+builds from the secrets volume. `assurer-task` does the same for one command: it reads the
+secrets, passes them through the environment (never the command line) and runs the task as the
+`assurer` user in `/app`, like `pbmc` does for PBM.
+
+```sh
+$S exec site assurer-task assurer-wp-import:run              # WordPress import: dry run, writes nothing
+$S exec site assurer-task assurer-wp-import:run --execute    # writes drafts (docs/content/wordpress-import-design.md)
+$S exec site assurer-task assurer-seo:seed-redirects         # legacy redirects, after publishing
+$S exec site assurer-task @apostrophecms/user:add <name> editor   # asks for the password
+```
+
+Use `exec -T` from a script. A task runs next to the live site on the same database; tasks that
+write say so, and the import changes only drafts.
 
 ## 5. Checks after a start
 
@@ -491,6 +508,7 @@ $S ps           # site running (healthy)
 $S logs site    # the app's log
 $S restart site
 $S stop site    # stops the site; data stays in the volumes
+$S exec site assurer-task assurer-wp-import:run   # any Apostrophe task (§4.1); this one is a dry run
 ```
 
 Never run `$S down -v`: it deletes the database, media, secrets and backups (§9.3).

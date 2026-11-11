@@ -12,7 +12,7 @@
 
 | # | Blocker | Why it blocks | Decision |
 |---|---|---|---|
-| B1 | **No target database.** Content entered in the local development database stays there: each site has its own database, and one site's database is never copied into another (AGENTS.md, ADR-0002, [new-site runbook](../runbooks/new-site-initialization.md)). No staging or production database or media store exists yet | Real content typed into the dev database would have to be typed again | **D-CONTENT-16: closed 2026-11-02, option A** (§6). Entry waits for the staging or production site (D-DB-2, D-DB-3) |
+| B1 | **No target database.** Content entered in the local development database stays there: each site has its own database, and one site's database is never copied into another (AGENTS.md, ADR-0002, [new-site runbook](../runbooks/new-site-initialization.md)). No staging or production database or media store exists yet | Real content typed into the dev database would have to be typed again | **D-CONTENT-16: closed 2026-11-02, option A** (§6). Entry waits for the staging or production site (D-DB-2, D-DB-3). *m1-067:* superseded; the OCI site exists and the WordPress import fills it with drafts (D-CONTENT-17, `assurer-wp-import:run`) |
 | B2 | **No approved copy.** The agent does not write business text. Every page needs the owner's text, or the owner's written approval of live-site text | Nothing to enter | D-CONTENT-12 |
 | B3 | **Leadership privacy** (17 people, photos, contact details) | `/leadership` and all `assurer-person` records | D-CONTENT-4 |
 | B4 | **Group company facts**: legal names, roles, relationships of the 9 entities | `/group`, organization records, Organization JSON-LD | D-CONTENT-2 |
@@ -134,6 +134,7 @@ These come up during CA-5 but are code changes with their own task and checks:
 - Remove the demo notice and the demonstration footer line on real-content builds (B6).
   *Done in m1-029:* shown only when `APOS_DEMO_SITE=1`.
 - Per-file redirects for the PDFs (§4), or an extension of the redirect seed task for them.
+  *Done in m1-067:* the WordPress import adds one 301 per imported PDF to its new file.
 - Card grids switch at 640 px; the requirements say 768 px (m1-021 carry-over).
   *Done in m1-029.*
 - A `/favicon.ico` (m1-021 carry-over). *Done in m1-029.*

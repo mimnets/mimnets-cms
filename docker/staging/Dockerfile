@@ -56,6 +56,7 @@ COPY docker/staging/mongod.conf /etc/assurer/mongod.conf
 COPY docker/staging/pbm-config.yaml /etc/assurer/pbm-config.yaml
 COPY --chmod=755 docker/staging/entrypoint.sh /usr/local/bin/assurer-staging-entrypoint
 COPY --chmod=755 docker/staging/pbmc.sh /usr/local/bin/pbmc
+COPY --chmod=755 docker/staging/assurer-task.sh /usr/local/bin/assurer-task
 COPY --chmod=755 docker/staging/run-as.sh /usr/local/bin/assurer-run-as
 
 # One layer, because a file removed above otherwise stays in the base image's

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | **Accepted.** |
+| **Status** | **Accepted.** Amended 2026-11-11 (m1-067): §3 and §9 allow the WordPress import into drafts, approved by the owner (D-CONTENT-19); see the amendment at the end. |
 | **Approved by** | Project owner, 2026-10-20. The decisions D-CONTENT-1, D-CONTENT-2 and D-CONTENT-8 were approved in the [m1-014 prompt](../../engineering/prompts/2026/10/2026-10-20-m1-014-content-model-foundation.prompt.md), which also asked for this ADR. |
 | **Date** | 2026-10-20 |
 | **Task** | `m1-014` · report: [2026-10-20-m1-014-content-model-foundation.report.md](../../engineering/reports/2026/10/2026-10-20-m1-014-content-model-foundation.report.md) |
@@ -56,7 +56,8 @@ Each fact has one owner record. A product names its categories; a location names
 organization. The other side reads them through `relationshipReverse`, so links cannot
 disagree. Lists sort by `displayOrder` (0–9999, default 100), then title. Group-company,
 leadership and location facts are entered only by people, after the owner confirms them. No
-importer or seed creates real records. The demo seed creates only fictional records labelled
+importer or seed creates real records, except the WordPress import (§9, amended m1-067), which
+creates drafts that people confirm and publish. The demo seed creates only fictional records labelled
 "Demo" or "(fictional)".
 
 ### 4. Relationships and localization
@@ -118,8 +119,10 @@ Nothing is implemented. Enabling it needs its own ADR.
 
 ### 9. Migration constraints
 
-There is no automated WordPress import. Real content is entered through the UI as drafts and
-published after owner review (CA-5). The demo seed (`assurer-demo:seed-corporate`):
+*Amended m1-067:* real content comes from the WordPress import (D-CONTENT-17), which writes
+drafts only, or is entered through the UI as drafts; either way it is published only after owner
+review (CA-5). The original text read: "There is no automated WordPress import. Real content is
+entered through the UI as drafts and published after owner review (CA-5)" The demo seed (`assurer-demo:seed-corporate`):
 
 - refuses to run when `NODE_ENV=production`;
 - runs on a temporary SQLite database, or on another database only with `--dev-database`;
@@ -193,3 +196,21 @@ the [m1-015 report](../../engineering/reports/2026/10/2026-10-29-m1-015-listing-
   An empty gallery or an "of one organization" list without an organization saves through the API
   and renders nothing.
 
+## Amendment (m1-067, 2026-11-11): the WordPress import
+
+Approved by the owner in session on 2026-11-11 ("Approve amendment (Recommended)", D-CONTENT-19),
+after D-CONTENT-17 chose an automated import. §3 and §9 change as marked above. The rules:
+
+- **One importer only:** `assurer-wp-import:run` (`modules/assurer-wp-import/`). It reads the old
+  site's public REST API and never writes to WordPress. No other importer or seed creates real
+  records.
+- **Drafts only.** Pages, products, organizations and locations are drafts; the import never
+  publishes. People are left out until they consent (D-CONTENT-4).
+- **Exception, core behaviour:** image and file records publish themselves on insert
+  (`autopublish`), and upload URLs are public by design. Only files already public on the old site
+  are imported.
+- **A person's work wins.** A re-run updates only drafts the import saved last; anything a person
+  edited, published or archived is left alone (the state rule in `lib/apply.js`).
+- **Facts stay unconfirmed** until the owner confirms them (D-CONTENT-2, D-CONTENT-12); the import
+  marks figures and lists review items in its report.
+- The design note is [docs/content/wordpress-import-design.md](../../content/wordpress-import-design.md).

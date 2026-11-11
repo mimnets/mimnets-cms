@@ -1,7 +1,8 @@
 // Organization record (ADR-0003): the group's companies and entities, reused
 // wherever they are listed. Names, roles and relationships of the real
 // entities are unverified until the owner confirms them (D-CONTENT-2), so
-// nothing is imported or published automatically.
+// nothing is published automatically; the WordPress import (m1-067) creates
+// drafts only.
 import { displayOrderField, displayOrderSort } from '../../lib/display-order.js';
 import { rejectNonWebUrls, webUrlField } from '../../lib/web-url.js';
 
