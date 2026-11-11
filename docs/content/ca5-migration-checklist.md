@@ -122,7 +122,7 @@ database: the staging or production site (D-CONTENT-16, option A).
 | B. Scripted entry from reviewed files | Approved copy kept in files and entered by a project task through Apostrophe APIs, run once per site | Same content in every environment; repeatable; reviewable in Git | New code to write and test; images and alt text still need curation; copy lives in the repository |
 | C. Export and import between sites | An export/import module moves documents and media from one site to another | No retyping | A new dependency (approval, licence and advisory checks); moves selected documents only, never a whole database |
 
-**Decision (owner, 2026-11-02, m1-030): A.** Content is entered through the UI on the staging or
+**Changed 2026-11-11 (m1-065) by the owner: an automated, repeatable WordPress import into drafts (D-CONTENT-17), first as a test on the OCI site, then the final run.** The checklists in §2 to §5 still apply to reviewing what the import creates. *Earlier:* **Decision (owner, 2026-11-02, m1-030): A.** Content is entered through the UI on the staging or
 production site once it exists (D-DB-2, D-DB-3). Until then, prepare the content outside the CMS:
 the owner collects approved copy, images and confirmations against §2–§3. The local dev database
 is for trials only; anything entered there is not migrated. *(m1-028 agent recommendation: A.)*
