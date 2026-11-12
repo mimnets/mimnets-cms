@@ -117,6 +117,21 @@ body {
   }
 }
 
+// Rich Text links styled as buttons (m1-071): "Style" in the link dialog
+// writes `data-link-style`.
+a[data-link-style='button'],
+a[data-link-style='button-outline'] {
+  @extend .assurer-button;
+}
+
+a[data-link-style='button'] {
+  @extend .assurer-button--primary;
+}
+
+a[data-link-style='button-outline'] {
+  @extend .assurer-button--outline;
+}
+
 // Hero
 .assurer-hero {
   position: relative;
@@ -142,7 +157,8 @@ body {
 
   h1, h2 {
     margin: 0 0 16px;
-    font-size: clamp(2rem, 5vw, 3.5rem);
+    // `cqi`: the hero's own width, so it also fits in a layout column (m1-071).
+    font-size: clamp(2rem, 5cqi, 3.5rem);
     font-weight: 700;
     text-align: left;
   }
@@ -283,26 +299,32 @@ body {
 .assurer-products__grid > [data-apos-area],
 .assurer-products__grid > .apos-area {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
   gap: 24px;
 }
 
-@media (min-width: 768px) {
+// Columns follow the width of `.assurer-products` (a size container, see
+// _sections.scss), so the grid also fits in a layout column (m1-071).
+@container (min-width: 560px) {
   .assurer-products__grid > [data-apos-area],
   .assurer-products__grid > .apos-area {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
-@media (min-width: 1024px) {
+@container (min-width: 720px) {
   .assurer-products__grid--cols-3 > [data-apos-area],
-  .assurer-products__grid--cols-3 > .apos-area {
-    grid-template-columns: repeat(3, 1fr);
-  }
-
+  .assurer-products__grid--cols-3 > .apos-area,
   .assurer-products__grid--cols-4 > [data-apos-area],
   .assurer-products__grid--cols-4 > .apos-area {
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@container (min-width: 900px) {
+  .assurer-products__grid--cols-4 > [data-apos-area],
+  .assurer-products__grid--cols-4 > .apos-area {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 

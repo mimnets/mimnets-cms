@@ -6,6 +6,24 @@
   margin: var(--assurer-space-section) 0;
 }
 
+// Size containers (m1-071): the grids choose their columns from the width of
+// the widget or page section they sit in, not the screen, so they also fit in
+// layout columns. Kept on these elements, not on <main> or the layout columns,
+// so Apostrophe's editing controls stay outside the containment.
+// Container widths: 1 per row below 560 px, 2 from 560, 3 from 720, 4 from 900.
+.assurer-section,
+.assurer-products,
+.assurer-hero,
+.assurer-cq {
+  container-type: inline-size;
+}
+
+// A hero inside a layout column is narrower; less vertical padding.
+.layout-widget .assurer-hero {
+  padding-top: 48px;
+  padding-bottom: 48px;
+}
+
 // Centred, like the product grid's intro (`.assurer-products__intro`).
 .assurer-section__intro {
   max-width: 760px;
@@ -13,10 +31,14 @@
   text-align: center;
 }
 
-// Editor-chosen column counts on wide screens. One column on phones, two on
-// tablets, as `.assurer-grid` already does.
-@media (min-width: 1024px) {
-  .assurer-grid--cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+// Editor-chosen column counts in wide containers. One per row in narrow ones,
+// two from 560 px, as `.assurer-grid` already does.
+@container (min-width: 720px) {
+  .assurer-grid--cols-3,
+  .assurer-grid--cols-4 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@container (min-width: 900px) {
   .assurer-grid--cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
@@ -201,12 +223,12 @@
   list-style: none;
 }
 
-@media (min-width: 768px) {
+@container (min-width: 720px) {
   .assurer-gallery__grid--cols-3,
   .assurer-gallery__grid--cols-4 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
-@media (min-width: 1024px) {
+@container (min-width: 900px) {
   .assurer-gallery__grid--cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 

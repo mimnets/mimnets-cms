@@ -305,12 +305,12 @@ Relationship fields are prefixed with `_` (e.g., `_linkPage`, `_author`).
 
 | File | Exports | Use for |
 |------|---------|---------|
-| `lib/area.js` | Default widget config object | Area field `widgets` option |
+| `lib/area.js` | `pageArea`, `columnArea`, `nestedColumnArea` (grouped widget menus) | Area field `options` |
 | `lib/link.js` | `linkFields(condition)`, `linkHref(item)` | Page-or-URL link fields |
 
 ```js
-import areaConfig from '../../lib/area.js';
-// then: options: { widgets: areaConfig }
+import { pageArea } from '../../lib/area.js';
+// then: options: pageArea
 ```
 
 ## i18n Key Convention

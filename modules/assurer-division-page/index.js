@@ -1,7 +1,7 @@
 // Division / overview page (ADR-0003), e.g. the Style and Health divisions or
 // a products hub. Lists its child product category pages automatically, in
 // page-tree order, so editors manage the list by moving pages in the tree.
-import areaConfig from '../../lib/area.js';
+import { pageArea } from '../../lib/area.js';
 
 export default {
   extend: '@apostrophecms/page-type',
@@ -32,9 +32,7 @@ export default {
       main: {
         type: 'area',
         label: 'More sections',
-        options: {
-          widgets: areaConfig
-        }
+        options: pageArea
       }
     },
     group: {

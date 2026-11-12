@@ -20,7 +20,7 @@ Shared configuration objects live in `lib/` and are imported where needed to avo
 
 | File | Purpose | Use when… |
 |------|---------|-----------|
-| `lib/area.js` | Default widget set for `area` fields | Adding or changing which widgets appear in an area |
+| `lib/area.js` | Widget menus (groups) for page, layout-column and nested-column areas | Adding or changing which widgets appear in an area |
 
 Follow-on additions to `lib/` as the project grows:
 - `lib/link.js` — reusable link-field definitions (linkType + `_linkPage` + `_linkFile`)

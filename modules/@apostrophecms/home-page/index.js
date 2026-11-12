@@ -1,4 +1,4 @@
-import areaConfig from '../../../lib/area.js';
+import { pageArea } from '../../../lib/area.js';
 
 export default {
   options: {
@@ -8,9 +8,7 @@ export default {
     add: {
       main: {
         type: 'area',
-        options: {
-          widgets: areaConfig
-        }
+        options: pageArea
       }
     },
     group: {

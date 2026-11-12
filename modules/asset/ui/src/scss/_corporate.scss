@@ -392,11 +392,13 @@ $nav-desktop: $bp-desktop;
   list-style: none;
 }
 
-@media (min-width: 768px) {
+// Columns follow the width of the container (see _sections.scss), not the
+// screen, so a grid also fits in a layout column (m1-071).
+@container (min-width: 560px) {
   .assurer-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
-@media (min-width: 1024px) {
+@container (min-width: 720px) {
   .assurer-grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
@@ -442,7 +444,7 @@ $nav-desktop: $bp-desktop;
   list-style: none;
 }
 
-@media (min-width: 768px) {
+@container (min-width: 560px) {
   .assurer-org-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
