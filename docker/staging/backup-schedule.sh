@@ -7,8 +7,8 @@
 # longer than the 7-day PITR target (D-DB-4). Runs as the pbm user; pbm-agent
 # (the pbm service) does the work.
 #
-# ASSURER_BACKUP_INTERVAL_HOURS=0 (restore drill): configure with PITR off, then
-# exit.
+# ASSURER_BACKUP_INTERVAL_HOURS=0 (restore drill): configure with PITR off, read
+# the backup list from storage, then exit.
 #
 # Guide: docs/runbooks/pbm-backup-and-restore.md
 set -euo pipefail
@@ -46,7 +46,21 @@ else
 fi
 
 if [ "$BACKUP_HOURS" = 0 ]; then
-  exit 0
+  # Read the backup list from the copied storage before `pbmc restore`.
+  # Applying a new storage above already sent a resync without waiting, and
+  # pbm-agent drops a second resync sent in the same second as a duplicate
+  # (checkDuplicateCmd), which left `--wait` waiting for ever (m1-069). The
+  # pause puts this one in a later second; the retries cover an agent that
+  # is not listening yet.
+  sleep 1
+  for _ in 1 2 3; do
+    if pbmc config --force-resync --wait --wait-time=2m > /dev/null 2>&1; then
+      log "Backup list read from storage"
+      exit 0
+    fi
+  done
+  log "ERROR: could not read the backup list from storage; see 'pbmc logs'"
+  exit 1
 fi
 
 trap 'exit 0' TERM INT

@@ -242,8 +242,7 @@ jobs:
           done
           test "$status" = healthy
           limit 120 $R up -d --no-deps restore-pbm
-          limit 300 $R up --no-deps --exit-code-from restore-pbm-config restore-pbm-config
-          limit 300 $R exec -T restore-pbm pbmc config --force-resync --wait
+          limit 420 $R up --no-deps --exit-code-from restore-pbm-config restore-pbm-config
           limit 900 $R exec -T restore-pbm pbmc restore --time="$(cat restore-time.txt)" --yes --wait
 
       # PBM runbook §3 step 3.
