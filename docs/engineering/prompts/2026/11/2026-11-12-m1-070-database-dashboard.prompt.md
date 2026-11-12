@@ -22,3 +22,6 @@ design note first. Design note:
   content, templates, theme or what?" (approval to commit, push and open the PR; PR #86. The PR
   had been opened under the owner's account with GitHub's default title just before the agent
   filled in the form; the agent set its title and description)
+- "pr merged, write the handoff for m1-071 - so PBM's has UI?" (PR #86 was still open on GitHub
+  when checked; the agent wrote the [m1-071 handoff](../../../../milestones/m1-071-handoff.md), which
+  answers the PBM question in §3)
