@@ -18,3 +18,7 @@ design note first. Design note:
   kept the `assurer-` module prefix that AGENTS.md requires until the staged rename task and its
   name map, and kept the brand out of stored names: the activity collection is
   `dataDashboardActivity`)
+- "yes, and please tell me that data dashboard how will help us? will it helps to export import
+  content, templates, theme or what?" (approval to commit, push and open the PR; PR #86. The PR
+  had been opened under the owner's account with GitHub's default title just before the agent
+  filled in the form; the agent set its title and description)
