@@ -217,11 +217,23 @@ jobs:
           date -u -d "@$end" +%Y-%m-%dT%H:%M:%S | tee restore-time.txt
 
       # PBM runbook §3 step 2, into the restore services' own, empty volumes.
+      # Each command has a time limit, so a hang fails the step and the
+      # diagnostics run (m1-069: this step hung on arm64 until the job timeout,
+      # which cancels the job and skips them). The ::notice lines give each
+      # command's time in the public API.
       - name: PITR restore into new, empty containers
         run: |
+          limit() {
+            local seconds="$1" start rc=0
+            shift
+            start=$(date +%s)
+            timeout "$seconds" "$@" || rc=$?
+            echo "::notice title=Restore command::rc=$rc after $(( $(date +%s) - start )) s: ${*: -3}"
+            return "$rc"
+          }
           date +%s > restore-start.txt
-          $R run --rm restore-copy
-          $R up -d --no-deps restore-mongo
+          limit 300 $R run --rm restore-copy
+          limit 120 $R up -d --no-deps restore-mongo
           status=
           for _ in $(seq 1 60); do
             status="$(docker inspect -f '{{.State.Health.Status}}' "$($R ps -q restore-mongo)")"
@@ -229,10 +241,10 @@ jobs:
             sleep 5
           done
           test "$status" = healthy
-          $R up -d --no-deps restore-pbm
-          $R up --no-deps restore-pbm-config
-          $R exec -T restore-pbm pbmc config --force-resync --wait
-          $R exec -T restore-pbm pbmc restore --time="$(cat restore-time.txt)" --yes --wait
+          limit 120 $R up -d --no-deps restore-pbm
+          limit 300 $R up --no-deps --exit-code-from restore-pbm-config restore-pbm-config
+          limit 300 $R exec -T restore-pbm pbmc config --force-resync --wait
+          limit 900 $R exec -T restore-pbm pbmc restore --time="$(cat restore-time.txt)" --yes --wait
 
       # PBM runbook §3 step 3.
       - name: Restored site serves the marker page and the upload
@@ -255,8 +267,9 @@ jobs:
         run: $S logs | grep -F '[assurer' || true
 
       # MongoDB's own log lines hold no passwords, only user and host names.
+      # Also after a cancel (job timeout), with time limits on the PBM calls.
       - name: Diagnostics after a failure
-        if: failure()
+        if: failure() || cancelled()
         run: |
           uname -m
           getconf PAGESIZE
@@ -265,8 +278,12 @@ jobs:
           docker run --rm --entrypoint mongod ghcr.io/mimnets/assurer-mongo:ci --version || echo "mongod --version exit $?"
           $S logs --tail 60 mongo app | grep -vF '[assurer]' | cut -c1-600 || true
           $RS ps -a || true
-          $RS logs --tail 60 restore-mongo restore-app | cut -c1-600 || true
-          $R exec -T restore-pbm pbmc logs --tail 30 || true
+          $RS logs --tail 60 restore-mongo restore-pbm restore-pbm-config restore-app | cut -c1-600 || true
+          timeout 60 $R exec -T restore-pbm pbmc status || true
+          timeout 60 $R exec -T restore-pbm pbmc logs --tail 30 > pbm-logs.txt 2>&1 || true
+          cat pbm-logs.txt
+          # The PBM log lines as an annotation, readable from the public API.
+          echo "::notice title=restore-pbm log::$(tail -n 15 pbm-logs.txt | cut -c1-300 | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')"
 
       - name: Remove the stack
         if: always()
