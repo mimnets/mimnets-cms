@@ -51,3 +51,12 @@ containers"). The theme presets move to `m1-070`.
 - "ok, tell me when the arm64 run finishes"
 - "our progress is not as expected - as we have db dashboard into plan right? tell me when we can
   get it?" (the database dashboard of m1-043 and m1-047: approved plan, no task scheduled yet)
+- To the fix commit and push: "yes please" (`2a498ec`). PR #84 had been merged at 04:44 UTC with
+  `0a1deb7` only, so the agent put the same commit on `fix/m1-069-pbm-resync` from `origin/main`
+  (`49de4b7`) for a new PR.
+- "staging for test right?" … "thanks - continue"
+- "pr is open, dashboard next after m1-069 and remember i changed the name name mimnets-wms instead
+  mimnets-cms and also repo change - https://github.com/mimnets/mimnets-wms.git"
+- "for your informaiton - wms means - website management system". The rename target is
+  `mimnets-wms`; the agent pointed the local `origin` at the new URL. The local and server Compose
+  project is still `mimnets-cms` until the staged rename changes it (its volumes carry the name).

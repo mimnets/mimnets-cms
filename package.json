@@ -52,6 +52,7 @@
   "dependencies": {
     "@apostrophecms/db-connect": "^1.1.0",
     "@apostrophecms/form": "^1.5.6",
+    "@apostrophecms/import-export": "^3.7.2",
     "@apostrophecms/redirect": "^1.7.1",
     "@apostrophecms/security-headers": "^1.0.2",
     "@apostrophecms/seo": "^1.7.1",

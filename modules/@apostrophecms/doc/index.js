@@ -11,7 +11,23 @@
 // user may not publish. Never-published drafts, editors, admins and code
 // that passes `permissions: false` are unchanged. The UI's "Discard draft"
 // on published content reverts instead of deleting, so it is not affected.
+//
+// Import and export (m1-070): the document context menu shows them to site
+// administrators only (lib/import-export-access.js).
+import { importExportOperationsFor } from '../../../lib/import-export-access.js';
+
 export default {
+  extendMethods(self) {
+    return {
+      getBrowserData(_super, req) {
+        const data = _super(req);
+        data.contextOperations = importExportOperationsFor(
+          self.apos, req, data.contextOperations
+        );
+        return data;
+      }
+    };
+  },
   handlers(self) {
     return {
       '@apostrophecms/doc-type:beforeDelete': {

@@ -105,6 +105,11 @@ apostrophe({
     'assurer-demo': {},
     // WordPress import into drafts (m1-067, D-CONTENT-17).
     'assurer-wp-import': {},
+    // Database dashboard, layer 1 (m1-070, D-DB-24): export and import of
+    // content (official module, MIT), for site administrators only, and the
+    // admin-only dashboard.
+    '@apostrophecms/import-export': {},
+    'assurer-data-dashboard': {},
     // Test-only tasks (CI admin bootstrap); refuse to run outside a
     // temporary SQLite database.
     'assurer-test': {}
