@@ -1,6 +1,8 @@
 // This configures the @apostrophecms/page module to add a "home" page type to the
 // pages menu
 
+import { importExportOperationsFor } from '../../../lib/import-export-access.js';
+
 export default {
   options: {
     types: [
@@ -42,5 +44,20 @@ export default {
       },
       children: true
     }
+  },
+  extendMethods(self) {
+    return {
+      // Import and export menus for site administrators only (m1-070)
+      getBrowserData(_super, req) {
+        const browserOptions = _super(req);
+        browserOptions.batchOperations = importExportOperationsFor(
+          self.apos, req, browserOptions.batchOperations
+        );
+        browserOptions.utilityOperations = importExportOperationsFor(
+          self.apos, req, browserOptions.utilityOperations
+        );
+        return browserOptions;
+      }
+    };
   }
 };

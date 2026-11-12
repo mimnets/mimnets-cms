@@ -33,7 +33,8 @@ export default {
         label: 'project:adminBarSiteAdmin',
         items: [
           '@apostrophecms/user',
-          '@apostrophecms/redirect'
+          '@apostrophecms/redirect',
+          'assurer-data-dashboard'
         ]
       }
     ]

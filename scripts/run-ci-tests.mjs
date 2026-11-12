@@ -23,6 +23,7 @@
 // after the restart, requests every legacy URL (one 301 hop each). m1-037
 // adds a test contributor (assurer-test:ensure-contributor) and runs the
 // publishing-workflow suite (D-CONTENT-11) before and after a restart.
+// m1-070 adds the data dashboard suite (D-DB-24).
 // Uses Node built-ins only.
 
 import { spawn } from 'node:child_process';
@@ -226,6 +227,7 @@ async function steps() {
     await run('content model test', [ 'scripts/content-model-test.mjs' ], { CONTENT_TEST_DISPOSABLE: '1' }) &&
     await run('SEO test', [ 'scripts/seo-test.mjs' ], { SEO_TEST_DISPOSABLE: '1' }) &&
     await run('publishing workflow test', [ 'scripts/publishing-workflow-test.mjs' ], { PUBLISH_TEST_DISPOSABLE: '1' }) &&
+    await run('data dashboard test', [ 'scripts/data-dashboard-test.mjs' ], { DASHBOARD_TEST_DISPOSABLE: '1' }) &&
     await stopServer().then(() => run('seed legacy redirects (assurer-seo:seed-redirects)', [
       'app', 'assurer-seo:seed-redirects', '--strict'
     ])) &&
