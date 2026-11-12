@@ -20,3 +20,34 @@ containers"). The theme presets move to `m1-070`.
   am missing on the layout also of that list of where we have all the assurer features." (with a
   screenshot of a page Layout column's menu: Rich Text, Image, Video, Nested Layout). Recorded as a
   request for its own task: the Assurer widgets in layout columns (content model change).
+- "pr is open and tell was it a bug or this is regular?" (PR #84; answer: regular, the column
+  lists are configured that way)
+- "later i wanted to change the remo name to mimnets-cms and you need to change the project changes
+  where you see vcl-assurer-group and also assurer including package manager or package names. once
+  done i will share you the new repo link here."
+- To the agent's question whether "Assurer" stays as the site's brand (A) or goes everywhere (B):
+  "i want to change everywhere - but change later or one by one without breaking the project. new
+  repo link - https://github.com/mimnets/mimnets-cms.git". Recorded as a later, staged rename task
+  (option B, one step at a time). The owner renamed the GitHub repository (same repository ID; the
+  old name redirects); the agent pointed the local `origin` at the new URL.
+- "but i recommend to change the propmots too". The agent noted the AGENTS.md rule (never rewrite
+  historical reports or invent past prompts) and offered: (1) keep past records and add a name map,
+  or (2) change the rule by PR and rename inside past records. Answer: "option 1, keep past records
+  and add the name map"
+- "during waiting to finish - let me add another issue for your concern - we need to have more
+  control and desing options for slider - so keep dig deeper what extra advance features can we add
+  into slider. now the slider is very simple and general - need to improve right?" Recorded as a
+  request for its own task (slideshow features, design note first). The agent found that autoplay
+  has no visible pause control (WCAG 2.2.2), to be fixed first.
+- To the question what the slider is mainly for: "full-width banner with headlines and buttons,
+  like a hero and please also consider other options too."
+- "now we waiting for what?" … "then you cannot do nothing right now?" … "please keep working start
+  what was in the handoff and then the question i raised today"
+- "and let me know about widegets on the nested layout". To the agent's proposal (page layout
+  columns: all column-friendly Assurer widgets; nested columns: the simple set plus the grids once
+  they collapse to one column; no Hero, Slideshow or further nesting in nested columns): "ok, go
+  with your recommendation and also noted why we only have one layout options can we have more
+  layout options?"
+- "ok, tell me when the arm64 run finishes"
+- "our progress is not as expected - as we have db dashboard into plan right? tell me when we can
+  get it?" (the database dashboard of m1-043 and m1-047: approved plan, no task scheduled yet)
