@@ -2,7 +2,7 @@
 // are assigned on the product record ("Product categories"), so a product
 // has one source of truth and can appear in several categories. This page
 // shows the published products assigned to it, by display order.
-import areaConfig from '../../lib/area.js';
+import { pageArea } from '../../lib/area.js';
 
 export default {
   extend: '@apostrophecms/page-type',
@@ -46,9 +46,7 @@ export default {
       main: {
         type: 'area',
         label: 'More sections',
-        options: {
-          widgets: areaConfig
-        }
+        options: pageArea
       }
     },
     group: {

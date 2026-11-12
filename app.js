@@ -50,6 +50,10 @@ apostrophe({
     '@apostrophecms/vite': {},
     'default-page': {},
     'nested-layout-widget': {},
+    // Layout starters with 3, 4 and 6 equal columns (m1-071).
+    'layout-3-widget': {},
+    'layout-4-widget': {},
+    'layout-6-widget': {},
     'nested-column-widget': {},
 
     // HTTP security headers (official module, MIT) and project security

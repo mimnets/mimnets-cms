@@ -66,12 +66,14 @@ export default function ({ page, categoryPages = [] }, {
             <Area doc={page} name="intro" />
           </div>
           {categoryPages.length > 0 && (
-            <ul className="assurer-grid assurer-grid--3 assurer-division__categories" aria-label="Product categories">
-              {categoryPages.map(category => <CategoryCard category={category} apos={apos} />)}
-            </ul>
+            <div className="assurer-cq">
+              <ul className="assurer-grid assurer-grid--3 assurer-division__categories" aria-label="Product categories">
+                {categoryPages.map(category => <CategoryCard category={category} apos={apos} />)}
+              </ul>
+            </div>
           )}
           {organizations.length > 0 && (
-            <section className="assurer-division__orgs" aria-labelledby="division-orgs">
+            <section className="assurer-division__orgs assurer-cq" aria-labelledby="division-orgs">
               <h2 id="division-orgs">Group organizations</h2>
               <ul className="assurer-org-list">
                 {organizations.map(organization => <Organization organization={organization} apos={apos} />)}

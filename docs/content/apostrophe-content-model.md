@@ -37,7 +37,7 @@ Built in m1-015 ([report](../engineering/reports/2026/10/2026-10-29-m1-015-listi
 | Widget | `assurer-hero` | Eyebrow, rich-text heading area (H1/H2/P), background image, overlay, up to 2 buttons (`linkFields()`) |
 | Widget | `assurer-slideshow` | 1–12 slides (image + caption), autoplay that respects reduced motion |
 | Widget | `assurer-product-grid` + `assurer-product-card` | Intro area, 2/3/4 columns, cards (image, badge, title, body, optional link) placed by drag and drop |
-| Widget | `@apostrophecms/rich-text`, `image`, `video`, `layout` (+ `nested-layout`) | Core; Styles presets for width, alignment, margin, padding |
+| Widget | `@apostrophecms/rich-text`, `image`, `video`, `layout` (+ `nested-layout`) | Core; Styles presets for width, alignment, margin, padding. **m1-071:** layout starters `layout-3`, `layout-4`, `layout-6` (the core layout is the 2-column one); Background style (colour, gradient, image) on layouts and columns; Rich Text links can be styled as buttons |
 | Widget | `@apostrophecms/form` (+ text, textarea, select, boolean fields) | Contact forms; notifications, review page, CSV export and retention task from m1-012 (`modules/assurer-forms/`) |
 | Global styles | `@apostrophecms/styles` | Site-wide typography and spacing sliders (editors can change them: D-M0-11) |
 | Layout | `views/layout.jsx` | Header nav = **top-level pages only** (`home._children`), no submenus. Footer text and the demo notice are **hard-coded** |
@@ -146,6 +146,13 @@ Eight new widgets. The four listing widgets share one internal pattern (pick mod
 `lib/area.js` (page-level `main` areas) gains the new widgets. Nested areas keep their own
 narrow lists, as today. The core `@apostrophecms/file` widget is **not** added: `assurer-downloads`
 covers single files too.
+
+**m1-071 status ([design](../milestones/m1-071-layout-columns-design.md), D-CONTENT-21):** `lib/area.js` now holds one
+table for all three menus: page `main` areas, layout columns and nested columns, in the same
+groups (Text and media, Sections, Listings, Forms, Layout) in the expanded "Add Content" panel.
+Layout columns offer every widget except the slideshow and the layout starters; nested columns
+also leave out the hero and any further layout. The grids read the width of their container
+(CSS container queries), so they collapse in narrow columns.
 
 ## 7. Dependencies that need approval (none added in m1-013)
 

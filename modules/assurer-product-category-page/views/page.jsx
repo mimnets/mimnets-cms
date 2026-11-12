@@ -55,7 +55,7 @@ export default function ({ page }, {
           {page.summary && <p className="assurer-category__summary">{page.summary}</p>}
           <Area doc={page} name="intro" />
           {products.length > 0 && (
-            <section aria-labelledby="category-products">
+            <section className="assurer-cq" aria-labelledby="category-products">
               <h2 id="category-products">Products</h2>
               <ul className="assurer-grid assurer-grid--3">
                 {products.map(product => <ProductCard product={product} apos={apos} Area={Area} />)}
