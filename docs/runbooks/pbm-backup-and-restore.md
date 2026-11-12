@@ -73,8 +73,8 @@ RS="$S --profile restore --profile restore-site"
    $R run --rm restore-copy
    $R up -d --no-deps restore-mongo          # wait until healthy: $R ps restore-mongo
    $R up -d --no-deps restore-pbm
-   $R up --no-deps restore-pbm-config        # prints "PBM configured (PITR off)" and exits
-   $R exec restore-pbm pbmc config --force-resync --wait
+   $R up --no-deps restore-pbm-config        # prints "PBM configured (PITR off)" and
+                                             # "Backup list read from storage", and exits
    $R exec restore-pbm pbmc restore --time=YYYY-MM-DDTHH:MM:SS --yes --wait
    ```
 
