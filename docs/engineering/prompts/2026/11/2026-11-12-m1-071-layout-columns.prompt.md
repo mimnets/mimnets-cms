@@ -27,3 +27,8 @@ The task is the recommended next item in the [m1-071 handoff](../../../../milest
 - "restarted with npm run dev, go ahead"
 - "try now"
 - "how stop  PID 19592"
+- "yes" (approval to commit, push and open the PR; the agent pushed
+  `feat/m1-071-layout-columns`, and the owner opened and merged it as PR #87)
+- "i will do check on oci - you please continue the rest one by one" (the agent wrote the
+  [m1-072 handoff](../../../../milestones/m1-072-handoff.md); AGENTS.md asks for a new session per
+  milestone, so m1-072 starts in a new session)

@@ -7,7 +7,7 @@
 | **Scope** | Widgets in layout columns and nested columns, grids that collapse in narrow columns, 3/4/6-column layout starters, grouped "Add Content" menus; added by the owner: the Background style for layouts and columns, and a "Button" style for Rich Text links. Not in scope: image and text animation (goes with the slideshow upgrade), brand colour presets, image `sizes` |
 | **Prompt** | [2026-11-12-m1-071-layout-columns.prompt.md](../../../prompts/2026/11/2026-11-12-m1-071-layout-columns.prompt.md) |
 | **Design** | [m1-071 layout columns design](../../../../milestones/m1-071-layout-columns-design.md), approved by the owner with every recommended answer (D-CONTENT-21); build changes in its §12 |
-| **Branch** | `feat/m1-071-layout-columns` from `origin/main` at `488eadc` (PR #86 merged). Nothing committed or pushed |
+| **Branch** | `feat/m1-071-layout-columns` from `origin/main` at `488eadc` (PR #86 merged). Committed and pushed with the owner's approval ("yes"): `36c06b2` code, `a586f01` records; merged by the owner as **PR #87** (`8f11100`). Handoff: [m1-072 handoff](../../../../milestones/m1-072-handoff.md) |
 
 Checks marked agent-executed were run by the agent. They are not human approval.
 
@@ -116,7 +116,7 @@ interaction and the editor UI at tablet or phone width.
 
 ## For the owner
 
-1. Review and approve a commit, push and PR when you are ready (nothing is committed).
+1. Done: PR #87 merged. Check m1-071 on the OCI site after the `release` run and `deploy.sh` (the owner said they will).
 2. Optional later items: brand colours as the colour presets; image `sizes` for columns; the flat
    dropdown instead of the expanded menu if editors prefer it.
 3. Animation is recorded for the slideshow upgrade (next task).
